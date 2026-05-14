@@ -1,0 +1,19 @@
+{
+  "name": "Grand Exchange",
+  "description": "A trading world for progressive players, Trade your items at this central point!",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "build",
+    "grand",
+    "exchange",
+    "by-mixolution"
+  ],
+  "image": "GrandExchange.webp",
+  "images": [
+    "GrandExchange.webp",
+    "GrandExchange_2.webp"
+  ],
+  "download": "Grand_Exchange.json"
+}

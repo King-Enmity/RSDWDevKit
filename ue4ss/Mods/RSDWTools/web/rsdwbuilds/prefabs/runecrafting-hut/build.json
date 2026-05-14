@@ -1,0 +1,20 @@
+{
+  "name": "Runecrafting Hut",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "runecrafting",
+    "hut",
+    "by-mixolution"
+  ],
+  "image": "runecrafting_hut.jpg",
+  "images": [
+    "runecrafting_hut.jpg"
+  ],
+  "download": "Runecrafting_Hut.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

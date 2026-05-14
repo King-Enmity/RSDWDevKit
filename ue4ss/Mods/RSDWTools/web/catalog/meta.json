@@ -1,0 +1,12 @@
+{
+  "fetchedAt": "2026-05-13T19:41:39.4835766\u002B00:00",
+  "itemsUpdated": false,
+  "recipesUpdated": false,
+  "spellsUpdated": false,
+  "itemCount": 1106,
+  "recipeCount": 733,
+  "spellCount": 39,
+  "sourceItems": "https://raw.githubusercontent.com/RSDWArchive/RSDWTools/main/website/tools/item-editor/data/catalog.json",
+  "sourceRecipes": "https://raw.githubusercontent.com/RSDWArchive/RSDWTools/main/website/tools/recipe-unlocker/data/recipes.json",
+  "sourceSpells": "https://raw.githubusercontent.com/RSDWArchive/RSDWTools/main/website/tools/spell-editor/data/spells.json"
+}

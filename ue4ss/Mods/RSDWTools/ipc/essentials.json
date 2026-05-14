@@ -1,0 +1,40 @@
+{
+  "version": 5,
+  "folders": [
+    {
+      "name": "Instant Home Teleport (Host)",
+      "mods": [
+        {
+          "name": "Teleport to Temple",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "tele 5076.578 189021.06 -3504.871",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#4F8FE0"
+    },
+    {
+      "name": "Instant Home Teleport (Client)",
+      "mods": [
+        {
+          "name": "Home Teleport",
+          "class": "DominionPlayerController",
+          "reach_spec": "controller",
+          "field": "Server_TeleportToPlayerStart",
+          "value": "",
+          "type": "call",
+          "ue_type": "()",
+          "kind": "call"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#4F8FE0"
+    }
+  ],
+  "kits": []
+}

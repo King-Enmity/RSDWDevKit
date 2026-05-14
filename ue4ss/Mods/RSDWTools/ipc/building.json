@@ -1,0 +1,164 @@
+{
+  "version": 5,
+  "folders": [
+    {
+      "name": "Enable Damage to Buildings",
+      "mods": [
+        {
+          "name": "Damage Buildings",
+          "class": "BP_PlayerCharacter_C",
+          "reach_spec": "pawn",
+          "field": "Server_SetCanDamageBuildings",
+          "value": "true",
+          "type": "call",
+          "ue_type": "(bValue: boolean)",
+          "note": "inherited from ADominionPlayerCharacter",
+          "kind": "call"
+        }
+      ],
+      "author": "Hi im Tat"
+    },
+    {
+      "name": "Preview Building Pieces",
+      "mods": [
+        {
+          "name": "Crucible",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "build.preview.piece 81",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        }
+      ],
+      "author": "Hi im Tat"
+    },
+    {
+      "name": "Force Place Previewed Building Piece",
+      "mods": [
+        {
+          "name": "Force Place Building",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "build.preview.force_place",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        }
+      ],
+      "author": "Hi im Tat"
+    },
+    {
+      "name": "Remove Stability (Buildings will collapse on Reload)",
+      "mods": [
+        {
+          "name": "No Stability Validation",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.buildings.stability off",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Stability: Off (Buildings may collapse on reload)",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "author": "Hi im Tat"
+    }
+  ],
+  "kits": [
+    {
+      "name": "Free Building Kit",
+      "folders": [
+        {
+          "name": "Free Build Mode (Turn off if using Build Service)",
+          "mods": [
+            {
+              "name": "Store Building Reqs",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "world.buildings.requirements save",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw",
+              "value_off": "world.buildings.requirements status"
+            },
+            {
+              "name": "Modify Building Reqs",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "world.buildings.requirements clear",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw",
+              "value_off": "world.buildings.requirements restore"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Free Build: Enabled",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "value_off": "Free Build: Disabled",
+              "umg_duration": "2",
+              "umg_off_duration": "2"
+            }
+          ],
+          "hotkey_mode": "toggle",
+          "color": "#A07050"
+        },
+        {
+          "name": "Additional Building Settings",
+          "mods": [
+            {
+              "name": "MaxHeightModifier",
+              "class": "BuildPlacementComponent",
+              "reach_spec": "controller.BuildPlacementComponent",
+              "field": "MaxHeightModifier",
+              "value": "3000.0",
+              "type": "float",
+              "ue_type": "float",
+              "kind": "set"
+            },
+            {
+              "name": "MaxPlacementDistance",
+              "class": "BuildPlacementComponent",
+              "reach_spec": "controller.BuildPlacementComponent",
+              "field": "MaxPlacementDistance",
+              "value": "7000.0",
+              "type": "float",
+              "ue_type": "float",
+              "kind": "set"
+            }
+          ],
+          "color": "#E0584F"
+        }
+      ],
+      "hotkey": "B",
+      "modifiers": [
+        "LEFT_ALT"
+      ],
+      "startup_folder": "Free Build Mode (Turn off if using Build Service)",
+      "author": "Hi im Tat, rachaelx",
+      "color": "#7B5FE0",
+      "sub_kits": []
+    }
+  ]
+}

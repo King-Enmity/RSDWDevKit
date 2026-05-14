@@ -1,0 +1,20 @@
+{
+  "name": "Ranged Training",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "ranged",
+    "training",
+    "by-mixolution"
+  ],
+  "image": "ranged_training.jpg",
+  "images": [
+    "ranged_training.jpg"
+  ],
+  "download": "Ranged_Training.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

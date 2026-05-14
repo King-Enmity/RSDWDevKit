@@ -1,0 +1,20 @@
+{
+  "name": "Manny Hut",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "manny",
+    "hut",
+    "by-mixolution"
+  ],
+  "image": "manny_hut.jpg",
+  "images": [
+    "manny_hut.jpg"
+  ],
+  "download": "Manny_Hut.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en" style="margin:0;padding:0;width:100%;height:100%;background:#000;">
+<head>
+<meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<title>RSDWTools - Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Round 60 Phase 1: WebView2-hosted Leaflet shell.
+   Critical layout (html/body 100% height, fullscreen #world-map) is set
+   inline because some style-block rules were silently ignored in the
+   embedded Chromium ; only cosmetic rules live here. */
+#status-bar {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: rgba(20, 20, 20, 0.85);
+  color: #d3d3d3;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  pointer-events: none;
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+.player-marker {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #3da9fc;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 8px rgba(61, 169, 252, 0.9);
+  transform: translate(-50%, -50%);
+}
+.remote-player-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #e63946;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 6px rgba(230, 57, 70, 0.85);
+  transform: translate(-50%, -50%);
+}
+.remote-player-label {
+  background: rgba(20, 20, 20, 0.85);
+  color: #FFD9DC;
+  border: 1px solid rgba(230, 57, 70, 0.6);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font: 11px "Segoe UI", system-ui, sans-serif;
+  white-space: nowrap;
+}
+.remote-player-label::before { display: none; }
+.leaflet-container {
+  background: #000 !important;
+}
+.build-label {
+  background: rgba(20, 20, 20, 0.85);
+  color: #FFD27A;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font: 11px "Segoe UI", system-ui, sans-serif;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  border: 1px solid rgba(255, 180, 84, 0.6);
+}
+.map-ctx-menu {
+  background: rgba(20, 20, 20, 0.95);
+  border: 1px solid #4a4a4a;
+  border-radius: 4px;
+  padding: 4px;
+  font: 12px "Segoe UI", system-ui, sans-serif;
+  color: #d3d3d3;
+  min-width: 200px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+}
+.map-ctx-coords {
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  color: #9DC8E8;
+  border-bottom: 1px solid #333;
+  margin-bottom: 4px;
+}
+.map-ctx-item {
+  display: block;
+  width: 100%;
+  background: transparent;
+  color: #d3d3d3;
+  border: none;
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 3px;
+  font: inherit;
+}
+.map-ctx-item:hover {
+  background: #2a4a6a;
+  color: #fff;
+}
+</style>
+</head>
+<body style="margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;">
+  <div id="status-bar">Initializing map...</div>
+  <div id="world-map"
+       style="position:absolute;top:0;left:0;right:0;bottom:0;background:#000;"
+       role="application"
+       aria-label="Dragonwilds world map"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="./locationmap-overlay.js"></script>
+  <script src="./map.js"></script>
+</body>
+</html>

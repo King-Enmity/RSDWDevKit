@@ -1,0 +1,21 @@
+{
+  "name": "Tannery Hut",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "tannery",
+    "hut",
+    "by-mixolution"
+  ],
+  "image": "tannery_hut.jpg",
+  "images": [
+    "tannery_hut.jpg",
+    "tannery_hut_close.jpg"
+  ],
+  "download": "Tannery_Hut.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

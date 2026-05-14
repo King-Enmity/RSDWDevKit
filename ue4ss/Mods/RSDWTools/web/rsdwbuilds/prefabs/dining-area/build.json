@@ -1,0 +1,21 @@
+{
+  "name": "Dining Area",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "dining",
+    "area",
+    "by-mixolution"
+  ],
+  "image": "dining_area.jpg",
+  "images": [
+    "dining_area.jpg",
+    "dining_area_close.jpg"
+  ],
+  "download": "Dining_Area.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

@@ -1,0 +1,20 @@
+{
+  "name": "Fight Ring",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "fight",
+    "ring",
+    "by-mixolution"
+  ],
+  "image": "Fight_Ring.jpg",
+  "images": [
+    "Fight_Ring.jpg"
+  ],
+  "download": "Fight_Ring.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

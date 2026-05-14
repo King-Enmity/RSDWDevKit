@@ -1,0 +1,250 @@
+{
+  "version": 5,
+  "folders": [
+    {
+      "name": "No Carry Weight Limits (Legs of Lightness Method)",
+      "mods": [
+        {
+          "name": "Modify Effect",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Effects/GE_ModifyMaxCarryWeight_LegsofLightness.GE_ModifyMaxCarryWeight_LegsofLightness_C Data.AmountToModify.Value 9999999",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "Apply Effect",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Effects/GE_ModifyMaxCarryWeight_LegsofLightness.GE_ModifyMaxCarryWeight_LegsofLightness_C",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "No Carry Weight: Active",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#A07050"
+    },
+    {
+      "name": "All Items - No Weight",
+      "mods": [
+        {
+          "name": "Item Weight is 0",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.foreach ItemData set Weight 0",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "All Items - No Weight",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#A07050"
+    },
+    {
+      "name": "All Items - Cannot be Destroyed",
+      "mods": [
+        {
+          "name": "Nothing Breaks",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.foreach ItemData set bCanBeDestroyed false",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "All Items - Cannot be Destroyed",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#E0C04F"
+    },
+    {
+      "name": "All Items - Set Durability to 9999",
+      "mods": [
+        {
+          "name": "Current Durability",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.foreach Item set Durability 9999",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "Base Durability",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.foreach ItemData set BaseDurability 9999",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "All Items - Set Durability to 9999",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#E0C04F"
+    },
+    {
+      "name": "All Items - Set Stack to 9999 (EXPERIMENTAL - Be Careful)",
+      "mods": [
+        {
+          "name": "All Items 9999",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.foreach Item set Count 9999",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "All Items - Set Stack to 9999",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#4F8FE0"
+    },
+    {
+      "name": "All Items - Set Stack Size to 9999",
+      "mods": [
+        {
+          "name": "Item Stack Size 9999",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.foreach ItemData set MaxStackSize 9999",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "All Items - Set Stack Size to 9999",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#4F8FE0"
+    },
+    {
+      "name": "All Items - Modify Power Level",
+      "mods": [
+        {
+          "name": "Change Power Level",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.foreach ItemData set PowerLevel 99",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Power Level set 99",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#E0584F"
+    },
+    {
+      "name": "Lose Nothing on Death",
+      "mods": [
+        {
+          "name": "Lose Nothing",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.foreach ItemData set bDropOnDeath false",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Lose Nothing on Death: Active",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#7B5FE0"
+    }
+  ],
+  "kits": []
+}

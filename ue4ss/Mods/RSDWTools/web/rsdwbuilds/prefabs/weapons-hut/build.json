@@ -1,0 +1,20 @@
+{
+  "name": "Weapons Hut",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "weapons",
+    "hut",
+    "by-mixolution"
+  ],
+  "image": "weapons_hut.jpg",
+  "images": [
+    "weapons_hut.jpg"
+  ],
+  "download": "Weapons_Hut.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

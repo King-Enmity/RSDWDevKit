@@ -1,0 +1,20 @@
+{
+  "name": "Mega Tower",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "mega",
+    "tower",
+    "by-mixolution"
+  ],
+  "image": "mega_tower.jpg",
+  "images": [
+    "mega_tower.jpg"
+  ],
+  "download": "Mega_Tower.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

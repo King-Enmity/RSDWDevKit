@@ -1,0 +1,21 @@
+{
+  "name": "Cooking Hut",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "cooking",
+    "hut",
+    "by-mixolution"
+  ],
+  "image": "cooking_hut.jpg",
+  "images": [
+    "cooking_hut.jpg",
+    "cooking_hut_side.jpg"
+  ],
+  "download": "Cooking_Hut.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

@@ -1,0 +1,119 @@
+{
+  "version": 5,
+  "folders": [
+    {
+      "name": "Instant Personal Chest",
+      "mods": [
+        {
+          "name": "Personal Chest",
+          "class": "PersonalInventoryComponent",
+          "reach_spec": "controller.PersonalInventoryComponent",
+          "field": "Client_TogglePersonalInventory",
+          "value": "",
+          "type": "call",
+          "ue_type": "()",
+          "kind": "call"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#2E5A8C"
+    },
+    {
+      "name": "Instant ShadowVeil",
+      "mods": [
+        {
+          "name": "ShadowVeil",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.ge.apply /Game/Gameplay/UtilityMagic/PerkSpells/ShadowVeil/GE_ShadowVeil.GE_ShadowVeil_C",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#9E9E9E"
+    },
+    {
+      "name": "Instant Infinite Windstep",
+      "mods": [
+        {
+          "name": "Windstep",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.ge.apply /Game/Gameplay/UtilityMagic/PerkSpells/Windstep/GE_Windstep.GE_Windstep_C",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Infinite Windstep: Active",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#7B5FE0"
+    },
+    {
+      "name": "Infinite Surges",
+      "mods": [
+        {
+          "name": "SurgeEffectMaxUsages",
+          "class": "BP_Components_Evade_C",
+          "reach_spec": "pawn.BP_Components_Evade",
+          "field": "SurgeEffectMaxUsages",
+          "value": "9999",
+          "type": "int32",
+          "ue_type": "int32",
+          "note": "inherited from UPlayerEvadeComponent",
+          "kind": "set"
+        },
+        {
+          "name": "SurgeEffectDuration",
+          "class": "BP_Components_Evade_C",
+          "reach_spec": "pawn.BP_Components_Evade",
+          "field": "SurgeEffectDuration",
+          "value": "9999",
+          "type": "float",
+          "ue_type": "float",
+          "note": "inherited from UPlayerEvadeComponent",
+          "kind": "set"
+        },
+        {
+          "name": "EnableSurge",
+          "class": "BP_Components_Evade_C",
+          "reach_spec": "pawn.BP_Components_Evade",
+          "field": "EnableSurge",
+          "value": "true",
+          "type": "call",
+          "ue_type": "(bEnable: boolean)",
+          "note": "inherited from UPlayerEvadeComponent",
+          "kind": "call"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Infinite Surges: Active",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#4F8FE0"
+    }
+  ],
+  "kits": []
+}

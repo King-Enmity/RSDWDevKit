@@ -1,0 +1,21 @@
+{
+  "name": "Smithing Hut",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "smithing",
+    "hut",
+    "by-mixolution"
+  ],
+  "image": "smithing_hut.jpg",
+  "images": [
+    "smithing_hut.jpg",
+    "smithing_hut_back.jpg"
+  ],
+  "download": "Smithing_Hut.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

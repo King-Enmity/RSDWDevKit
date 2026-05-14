@@ -1,0 +1,20 @@
+{
+  "name": "Fight Pit",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "fight",
+    "pit",
+    "by-mixolution"
+  ],
+  "image": "fight_pit.jpg",
+  "images": [
+    "fight_pit.jpg"
+  ],
+  "download": "Fight_Pit.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

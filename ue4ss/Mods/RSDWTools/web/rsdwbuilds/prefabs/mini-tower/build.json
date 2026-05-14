@@ -1,0 +1,20 @@
+{
+  "name": "Mini Tower",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "mini",
+    "tower",
+    "by-mixolution"
+  ],
+  "image": "mini_tower.jpg",
+  "images": [
+    "mini_tower.jpg"
+  ],
+  "download": "Mini_Tower.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

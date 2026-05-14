@@ -1,0 +1,21 @@
+{
+  "name": "Dragonkin Storage",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "dragonkin",
+    "storage",
+    "by-mixolution"
+  ],
+  "image": "dragonkin_storage.jpg",
+  "images": [
+    "dragonkin_storage.jpg",
+    "dragonkin_storage_close.jpg"
+  ],
+  "download": "Dragonkin_Storage.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

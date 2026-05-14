@@ -1,0 +1,20 @@
+{
+  "name": "Chests Hut",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "chests",
+    "hut",
+    "by-mixolution"
+  ],
+  "image": "chests_hut.jpg",
+  "images": [
+    "chests_hut.jpg"
+  ],
+  "download": "Chests_Hut.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

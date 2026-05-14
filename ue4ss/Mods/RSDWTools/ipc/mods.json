@@ -1,0 +1,101 @@
+{
+  "version": 5,
+  "folders": [
+    {
+      "name": "Cool VFX",
+      "mods": [
+        {
+          "name": "BP_PlayTeleportEndVFXOnPlayer",
+          "class": "DominionPlayerCharacter",
+          "reach_spec": "pawn",
+          "field": "BP_PlayTeleportEndVFXOnPlayer",
+          "value": "",
+          "type": "call",
+          "ue_type": "()",
+          "kind": "call"
+        },
+        {
+          "name": "BP_PlayTeleportBeginVFXOnPlayer",
+          "class": "DominionPlayerCharacter",
+          "reach_spec": "pawn",
+          "field": "BP_PlayTeleportBeginVFXOnPlayer",
+          "value": "",
+          "type": "call",
+          "ue_type": "()",
+          "kind": "call"
+        }
+      ],
+      "show_apply_all": false,
+      "color": "#3FA3A3"
+    },
+    {
+      "name": "Show Debug",
+      "mods": [
+        {
+          "name": "bShowDebugInfo",
+          "class": "PlayerHUD",
+          "reach_spec": "hud",
+          "field": "bShowDebugInfo",
+          "value": "true",
+          "type": "bool",
+          "ue_type": "boolean",
+          "note": "inherited from AHUD",
+          "kind": "set"
+        },
+        {
+          "name": "PreviousDebugTarget",
+          "class": "PlayerHUD",
+          "reach_spec": "hud",
+          "field": "PreviousDebugTarget",
+          "value": "",
+          "type": "call",
+          "ue_type": "()",
+          "note": "inherited from AHUD",
+          "kind": "call"
+        },
+        {
+          "name": "NextDebugTarget",
+          "class": "PlayerHUD",
+          "reach_spec": "hud",
+          "field": "NextDebugTarget",
+          "value": "",
+          "type": "call",
+          "ue_type": "()",
+          "note": "inherited from AHUD",
+          "kind": "call"
+        }
+      ],
+      "color": "#7B5FE0"
+    },
+    {
+      "name": "Change Worlds (This may break your .sav)",
+      "mods": [
+        {
+          "name": "Gym Dev World",
+          "class": "DominionPlayerController",
+          "reach_spec": "controller",
+          "field": "SwitchLevel",
+          "value": "L_GymSelectorHub",
+          "type": "call",
+          "ue_type": "(URL: FString)",
+          "note": "inherited from APlayerController",
+          "kind": "call"
+        },
+        {
+          "name": "Default World",
+          "class": "DominionPlayerController",
+          "reach_spec": "controller",
+          "field": "SwitchLevel",
+          "value": "L_World",
+          "type": "call",
+          "ue_type": "(URL: FString)",
+          "note": "inherited from APlayerController",
+          "kind": "call"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#E0584F"
+    }
+  ],
+  "kits": []
+}

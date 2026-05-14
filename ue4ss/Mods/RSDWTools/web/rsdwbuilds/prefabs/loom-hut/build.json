@@ -1,0 +1,21 @@
+{
+  "name": "Loom Hut",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "loom",
+    "hut",
+    "by-mixolution"
+  ],
+  "image": "loom_hut.jpg",
+  "images": [
+    "loom_hut.jpg",
+    "loom_hut_close.jpg"
+  ],
+  "download": "Loom_Hut.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

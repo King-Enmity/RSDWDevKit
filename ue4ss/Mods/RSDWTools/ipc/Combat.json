@@ -1,0 +1,231 @@
+{
+  "version": 5,
+  "folders": [
+    {
+      "name": "Cant Touch Me",
+      "mods": [
+        {
+          "name": "bCanTakeDamage",
+          "class": "PlayerDamageComponent",
+          "reach_spec": "pawn.PlayerDamageComponent",
+          "field": "bCanTakeDamage",
+          "value": "false",
+          "type": "bool",
+          "ue_type": "boolean",
+          "note": "inherited from UDamageComponent",
+          "kind": "set"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Cant Touch Me: Active",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#7B5FE0"
+    },
+    {
+      "name": "Cant Die",
+      "mods": [
+        {
+          "name": "bCanDie",
+          "class": "PlayerHealthComponent",
+          "reach_spec": "pawn.HealthComponent",
+          "field": "bCanDie",
+          "value": "false",
+          "type": "bool",
+          "ue_type": "boolean",
+          "note": "inherited from UHealthComponent",
+          "kind": "set"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Cant Die: Active",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#7B5FE0"
+    },
+    {
+      "name": "Cant Receive Damage",
+      "mods": [
+        {
+          "name": "Invulnerable",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Effects/GE_Invulnerable.GE_Invulnerable_C",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Cant Receive Damage: Active",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#7B5FE0"
+    },
+    {
+      "name": "Attack Speed (2x)",
+      "mods": [
+        {
+          "name": "Set Attack Speed",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Effects/GE_ModifyMeleeAttackSpeed.GE_ModifyMeleeAttackSpeed_C Data.AmountToModify.Value 2.0",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "Apply Attack Speed",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Effects/GE_ModifyMeleeAttackSpeed.GE_ModifyMeleeAttackSpeed_C",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#E0584F"
+    },
+    {
+      "name": "Infinite Stamina",
+      "mods": [
+        {
+          "name": "Infinite Stamina",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Effects/GE_CHEAT_InfiniteStaminaRegen.GE_CHEAT_InfiniteStaminaRegen_C",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Infinite Stamina: Active",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#E0C04F"
+    },
+    {
+      "name": "Pause AI",
+      "mods": [
+        {
+          "name": "Pause AI",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.foreach DominionAICharacter set CustomTimeDilation 0",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Nearby AI: Paused",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#5A8C5A"
+    },
+    {
+      "name": "Unpause AI",
+      "mods": [
+        {
+          "name": "Unpause AI",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.foreach DominionAICharacter set CustomTimeDilation 1.0",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Nearby AI: Play",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#5A8C5A"
+    },
+    {
+      "name": "Delete All AI",
+      "mods": [
+        {
+          "name": "Bye",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.foreach DominionAICharacter call K2_DestroyActor 1",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "All Nearby AI Destroyed",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#5A8C5A"
+    }
+  ],
+  "kits": []
+}

@@ -1,0 +1,293 @@
+{
+  "version": 5,
+  "folders": [
+    {
+      "name": "Refill Survival Meters",
+      "mods": [
+        {
+          "name": "H_Remove_Decay",
+          "class": "BP_HydrationComponent_C",
+          "reach_spec": "pawn.BP_HydrationComponent",
+          "field": "DecayBuffer",
+          "value": "0.0",
+          "type": "float",
+          "ue_type": "float",
+          "note": "inherited from UHydrationComponent",
+          "kind": "set"
+        },
+        {
+          "name": "S_Remove_Decay",
+          "class": "SustenanceComponent",
+          "reach_spec": "pawn.SustenanceComponent",
+          "field": "DecayBuffer",
+          "value": "0.0",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        },
+        {
+          "name": "E_Remove_Decay",
+          "class": "BP_EnduranceComponent_C",
+          "reach_spec": "pawn.BP_EnduranceComponent",
+          "field": "DecayBuffer",
+          "value": "0.0",
+          "type": "float",
+          "ue_type": "float",
+          "note": "inherited from UEnduranceComponent",
+          "kind": "set"
+        },
+        {
+          "name": "CurrentEndurance",
+          "class": "BP_EnduranceComponent_C",
+          "reach_spec": "pawn.BP_EnduranceComponent",
+          "field": "CurrentEndurance",
+          "value": "100",
+          "type": "float",
+          "ue_type": "float",
+          "note": "inherited from UEnduranceComponent",
+          "kind": "set"
+        },
+        {
+          "name": "CurrentHydration",
+          "class": "BP_HydrationComponent_C",
+          "reach_spec": "pawn.BP_HydrationComponent",
+          "field": "CurrentHydration",
+          "value": "100",
+          "type": "float",
+          "ue_type": "float",
+          "note": "inherited from UHydrationComponent",
+          "kind": "set"
+        },
+        {
+          "name": "CurrentSustenance",
+          "class": "SustenanceComponent",
+          "reach_spec": "pawn.SustenanceComponent",
+          "field": "CurrentSustenance",
+          "value": "100",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Survival Values: Filled",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#4F8FE0"
+    },
+    {
+      "name": "Lock Hydration, Sustenance, Endurance",
+      "mods": [
+        {
+          "name": "E_Inf_Decay",
+          "class": "BP_EnduranceComponent_C",
+          "reach_spec": "pawn.BP_EnduranceComponent",
+          "field": "DecayBuffer",
+          "value": "999999",
+          "type": "float",
+          "ue_type": "float",
+          "note": "inherited from UEnduranceComponent",
+          "kind": "set"
+        },
+        {
+          "name": "S_Inf_Decay",
+          "class": "SustenanceComponent",
+          "reach_spec": "pawn.SustenanceComponent",
+          "field": "DecayBuffer",
+          "value": "999999",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        },
+        {
+          "name": "H_Inf_Decay",
+          "class": "BP_HydrationComponent_C",
+          "reach_spec": "pawn.BP_HydrationComponent",
+          "field": "DecayBuffer",
+          "value": "999999",
+          "type": "float",
+          "ue_type": "float",
+          "note": "inherited from UHydrationComponent",
+          "kind": "set"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Survival Values: Locked",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#E0C04F"
+    },
+    {
+      "name": "Immune to Soul Rift",
+      "mods": [
+        {
+          "name": "Server_SetSoulRiftImmunity",
+          "class": "BP_PlayerCharacter_C",
+          "reach_spec": "pawn",
+          "field": "Server_SetSoulRiftImmunity",
+          "value": "true",
+          "type": "call",
+          "ue_type": "(bValue: boolean)",
+          "note": "inherited from ADominionPlayerCharacter",
+          "kind": "call"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Soul Rift Immunity: Active",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#7B5FE0"
+    },
+    {
+      "name": "Remove Soulrift",
+      "mods": [
+        {
+          "name": "Server_EnableSoulRift",
+          "class": "DominionPlayerCharacter",
+          "reach_spec": "pawn",
+          "field": "Server_EnableSoulRift",
+          "value": "false",
+          "type": "call",
+          "ue_type": "(bValue: boolean)",
+          "kind": "call"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Soul Rift: Removed",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "2"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#7B5FE0"
+    },
+    {
+      "name": "Well Rested",
+      "mods": [
+        {
+          "name": "TriggerWellRested",
+          "class": "BP_Components_PlayerTrackedStatusEffects_C",
+          "reach_spec": "pawn.BP_Components_PlayerTrackedStatusEffects",
+          "field": "TriggerWellRested",
+          "value": "9999",
+          "type": "call",
+          "ue_type": "(Duration: float)",
+          "note": "inherited from UTrackedStatusEffectsComponent",
+          "kind": "call"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Well Rested: Active",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#E0C04F"
+    },
+    {
+      "name": "Clear the Bad Things",
+      "mods": [
+        {
+          "name": "RemoveWither",
+          "class": "BP_Components_PlayerTrackedStatusEffects_C",
+          "reach_spec": "pawn.BP_Components_PlayerTrackedStatusEffects",
+          "field": "RemoveWither",
+          "value": "100",
+          "type": "call",
+          "ue_type": "(Amount: float)",
+          "note": "inherited from UTrackedStatusEffectsComponent",
+          "kind": "call"
+        },
+        {
+          "name": "RemovePoison",
+          "class": "BP_Components_PlayerTrackedStatusEffects_C",
+          "reach_spec": "pawn.BP_Components_PlayerTrackedStatusEffects",
+          "field": "RemovePoison",
+          "value": "100",
+          "type": "call",
+          "ue_type": "(Amount: float)",
+          "note": "inherited from UTrackedStatusEffectsComponent",
+          "kind": "call"
+        },
+        {
+          "name": "RemoveBurning",
+          "class": "BP_Components_PlayerTrackedStatusEffects_C",
+          "reach_spec": "pawn.BP_Components_PlayerTrackedStatusEffects",
+          "field": "RemoveBurning",
+          "value": "100",
+          "type": "call",
+          "ue_type": "(Amount: float)",
+          "note": "inherited from UTrackedStatusEffectsComponent",
+          "kind": "call"
+        },
+        {
+          "name": "RemoveBleeding",
+          "class": "BP_Components_PlayerTrackedStatusEffects_C",
+          "reach_spec": "pawn.BP_Components_PlayerTrackedStatusEffects",
+          "field": "RemoveBleeding",
+          "value": "100",
+          "type": "call",
+          "ue_type": "(Amount: float)",
+          "note": "inherited from UTrackedStatusEffectsComponent",
+          "kind": "call"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#5A8C5A"
+    },
+    {
+      "name": "Reset All Status Effects",
+      "mods": [
+        {
+          "name": "ResetAllTrackedStatusEffects",
+          "class": "BP_Components_PlayerTrackedStatusEffects_C",
+          "reach_spec": "pawn.BP_Components_PlayerTrackedStatusEffects",
+          "field": "ResetAllTrackedStatusEffects",
+          "value": "",
+          "type": "call",
+          "ue_type": "()",
+          "note": "inherited from UTrackedStatusEffectsComponent",
+          "kind": "call"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#5A8C5A"
+    }
+  ],
+  "kits": []
+}

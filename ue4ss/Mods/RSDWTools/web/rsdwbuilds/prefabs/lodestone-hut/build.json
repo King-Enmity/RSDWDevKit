@@ -1,0 +1,20 @@
+{
+  "name": "Lodestone Hut",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "lodestone",
+    "hut",
+    "by-mixolution"
+  ],
+  "image": "lodestone_hut.jpg",
+  "images": [
+    "lodestone_hut.jpg"
+  ],
+  "download": "Lodestone_Hut.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

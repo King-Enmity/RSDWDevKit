@@ -1,0 +1,21 @@
+{
+  "name": "Construction Hut",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "construction",
+    "hut",
+    "by-mixolution"
+  ],
+  "image": "construction_hut.jpg",
+  "images": [
+    "construction_hut.jpg",
+    "construction_hut_close.jpg"
+  ],
+  "download": "Construction_Hut.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

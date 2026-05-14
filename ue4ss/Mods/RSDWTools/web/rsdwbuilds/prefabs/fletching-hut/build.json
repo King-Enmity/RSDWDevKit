@@ -1,0 +1,21 @@
+{
+  "name": "Fletching Hut",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "fletching",
+    "hut",
+    "by-mixolution"
+  ],
+  "image": "fletching_hut.jpg",
+  "images": [
+    "fletching_hut.jpg",
+    "fletching_hut_close.jpg"
+  ],
+  "download": "Fletching_Hut.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

@@ -1,0 +1,21 @@
+{
+  "name": "Combat Training",
+  "description": "This is a prefab from the Dragonkin Colosseum build by Mixolution",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "combat",
+    "training",
+    "by-mixolution"
+  ],
+  "image": "combat_training.jpg",
+  "images": [
+    "combat_training.jpg",
+    "combat_training_side_view.jpg"
+  ],
+  "download": "Combat_Training.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

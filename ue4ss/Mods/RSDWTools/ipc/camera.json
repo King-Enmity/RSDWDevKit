@@ -1,0 +1,741 @@
+{
+  "version": 5,
+  "folders": [],
+  "kits": [
+    {
+      "name": "Oculus Unlocked (Free Camera)",
+      "folders": [
+        {
+          "name": "StartUp",
+          "mods": [
+            {
+              "name": "DistanceFromPlayerSpeedFalloffThreshold",
+              "class": "OculusMovementComponent",
+              "reach_spec": "pawn.OculusComponent.OculusPawn.MovementComponent",
+              "field": "DistanceFromPlayerSpeedFalloffThreshold",
+              "value": "999999",
+              "type": "float",
+              "ue_type": "float",
+              "kind": "set",
+              "value_off": "999999"
+            },
+            {
+              "name": "MaxDistanceFromPlayer",
+              "class": "OculusMovementComponent",
+              "reach_spec": "pawn.OculusComponent.OculusPawn.MovementComponent",
+              "field": "MaxDistanceFromPlayer",
+              "value": "999999",
+              "type": "float",
+              "ue_type": "float",
+              "kind": "set",
+              "value_off": "999999"
+            },
+            {
+              "name": "Collisions (NoClip)",
+              "class": "OculusPawn",
+              "reach_spec": "pawn.OculusComponent.OculusPawn",
+              "field": "bActorEnableCollision",
+              "value": "false",
+              "type": "bool",
+              "ue_type": "boolean",
+              "note": "inherited from AActor",
+              "kind": "set",
+              "value_off": "false"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Camera Mode: Ready",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "value_off": "Camera Mode: Disabled",
+              "umg_duration": "2",
+              "umg_off_duration": "2"
+            }
+          ],
+          "hotkey_mode": "toggle",
+          "show_apply_all": false,
+          "color": "#E0C04F"
+        },
+        {
+          "name": "Toggle Camera",
+          "mods": [
+            {
+              "name": "ToggleOculusCamera",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.apply /Game/Gameplay/GameplayEffects/PerksV2/GE_PerkV2_Construction_Oculus.GE_PerkV2_Construction_Oculus_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw",
+              "value_off": "player.ge.remove /Game/Gameplay/GameplayEffects/PerksV2/GE_PerkV2_Construction_Oculus.GE_PerkV2_Construction_Oculus_C"
+            },
+            {
+              "name": "ToggleVignette",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "ui.widgets.setvis 17 1",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw",
+              "value_off": "ui.widgets.setvis 17 1"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Camera Mode: Enabled",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "value_off": "Camera Mode: Disabled",
+              "umg_duration": "2",
+              "umg_off_duration": "2"
+            }
+          ],
+          "hotkey": "ONE",
+          "hotkey_mode": "toggle",
+          "show_apply_all": false,
+          "color": "#4F8FE0"
+        },
+        {
+          "name": "Camera Speed",
+          "mods": [
+            {
+              "name": "MaxSpeed",
+              "class": "OculusMovementComponent",
+              "reach_spec": "pawn.OculusComponent.OculusPawn.MovementComponent",
+              "field": "MaxSpeed",
+              "value": "3600",
+              "type": "float",
+              "ue_type": "float",
+              "note": "inherited from UFloatingPawnMovement",
+              "kind": "set",
+              "value_off": "1200.0"
+            },
+            {
+              "name": "Acceleration",
+              "class": "OculusMovementComponent",
+              "reach_spec": "pawn.OculusComponent.OculusPawn.MovementComponent",
+              "field": "Acceleration",
+              "value": "12000.0",
+              "type": "float",
+              "ue_type": "float",
+              "note": "inherited from UFloatingPawnMovement",
+              "kind": "set",
+              "value_off": "4000.0"
+            },
+            {
+              "name": "Deceleration",
+              "class": "OculusMovementComponent",
+              "reach_spec": "pawn.OculusComponent.OculusPawn.MovementComponent",
+              "field": "Deceleration",
+              "value": "24000.0",
+              "type": "float",
+              "ue_type": "float",
+              "note": "inherited from UFloatingPawnMovement",
+              "kind": "set",
+              "value_off": "8000.0"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Camera Speed: 3x",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "value_off": "Camera Speed: Default",
+              "umg_duration": "2",
+              "umg_off_duration": "2"
+            }
+          ],
+          "hotkey": "TWO",
+          "hotkey_mode": "toggle",
+          "show_apply_all": false,
+          "color": "#7FBF45"
+        },
+        {
+          "name": "Toggle HUD",
+          "mods": [
+            {
+              "name": "ToggleHUD",
+              "class": "PlayerHUD",
+              "reach_spec": "hud",
+              "field": "ShowHUD",
+              "value": "",
+              "type": "call",
+              "ue_type": "()",
+              "note": "inherited from AHUD",
+              "kind": "call"
+            },
+            {
+              "name": "ToggleWatermark",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "ui.widgets.setvis 33 1",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw",
+              "value_off": "ui.widgets.setvis 33 3"
+            }
+          ],
+          "hotkey": "THREE",
+          "hotkey_mode": "toggle",
+          "show_apply_all": false
+        },
+        {
+          "name": "Toggle Nameplates (Must be Host)",
+          "mods": [
+            {
+              "name": "ToggleVisibility",
+              "class": "PlayerNameplateComponent",
+              "reach_spec": "pawn.PlayerNameplateComponent",
+              "field": "ToggleVisibility",
+              "value": "true",
+              "type": "call",
+              "ue_type": "(bPropagateToChildren: boolean)",
+              "note": "inherited from USceneComponent",
+              "kind": "call",
+              "value_off": "true"
+            },
+            {
+              "name": "bVisible",
+              "class": "BP_Player_Nameplate_C",
+              "reach_spec": "pawn.BP_Player_Nameplate",
+              "field": "bVisible",
+              "value": "false",
+              "type": "bool",
+              "ue_type": "boolean",
+              "note": "inherited from USceneComponent",
+              "kind": "set",
+              "value_off": "true"
+            },
+            {
+              "name": "Inspector: BP_Player_Nameplate_C.bIsActive = false",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "world.foreach BP_Player_Nameplate_C set bIsActive false",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw",
+              "value_off": "world.foreach BP_Player_Nameplate_C set bIsActive true"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Nameplate Visibility Off",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "value_off": "Nameplate Visibility On",
+              "umg_duration": "2",
+              "umg_off_duration": "2"
+            }
+          ],
+          "hotkey": "FOUR",
+          "hotkey_mode": "toggle",
+          "show_apply_all": false
+        },
+        {
+          "name": "Attach Debug to AI",
+          "mods": [
+            {
+              "name": "debug.watch.snap",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "debug.watch.snap @",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            }
+          ],
+          "hotkey": "SIX",
+          "hotkey_mode": "set",
+          "show_apply_all": false,
+          "color": "#E08A4F"
+        },
+        {
+          "name": "Pause AI",
+          "mods": [
+            {
+              "name": "Pause AI",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "world.foreach DominionAICharacter set CustomTimeDilation 0",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw",
+              "value_off": "world.foreach DominionAICharacter set CustomTimeDilation 1.0"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Enemy AI: Paused",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "value_off": "Enemy AI: Play",
+              "umg_duration": "2",
+              "umg_off_duration": "2"
+            }
+          ],
+          "hotkey": "SEVEN",
+          "hotkey_mode": "toggle",
+          "show_apply_all": false,
+          "color": "#E08A4F"
+        },
+        {
+          "name": "Slow Motion",
+          "mods": [
+            {
+              "name": "TimeDilation",
+              "class": "WorldSettings",
+              "reach_spec": "world.PersistentLevel.WorldSettings",
+              "field": "TimeDilation",
+              "value": "0.1",
+              "type": "float",
+              "ue_type": "float",
+              "kind": "set",
+              "value_off": "1.0"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Slow Motion: On",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "value_off": "Slow Motion: Off",
+              "umg_duration": "3"
+            }
+          ],
+          "hotkey": "EIGHT",
+          "hotkey_mode": "toggle",
+          "show_apply_all": false
+        },
+        {
+          "name": "Pause Game",
+          "mods": [
+            {
+              "name": "TimeDilation",
+              "class": "WorldSettings",
+              "reach_spec": "world.PersistentLevel.WorldSettings",
+              "field": "TimeDilation",
+              "value": "0",
+              "type": "float",
+              "ue_type": "float",
+              "kind": "set",
+              "value_off": "1.0"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Engine Paused",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "value_off": "Engine Play",
+              "umg_duration": "2",
+              "umg_off_duration": "2"
+            }
+          ],
+          "hotkey": "NINE",
+          "hotkey_mode": "toggle",
+          "show_apply_all": false
+        },
+        {
+          "name": "Grab Viewed Actor",
+          "mods": [
+            {
+              "name": "Copy Target to Preview",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "build.preview.lookat",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            }
+          ],
+          "hotkey": "E",
+          "hotkey_mode": "set",
+          "show_apply_all": false,
+          "color": "#3FA3A3"
+        },
+        {
+          "name": "Rotation Controls",
+          "mods": [
+            {
+              "name": "10 Degree Rotation",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "world.buildings.rotation.step 1",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw",
+              "value_off": "world.buildings.rotation.step 15"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Rotation: 1 Degrees",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "value_off": "Rotation: 15 Degrees",
+              "umg_duration": "2",
+              "umg_off_duration": "2"
+            }
+          ],
+          "hotkey": "R",
+          "hotkey_mode": "toggle",
+          "show_apply_all": false,
+          "color": "#3FA3A3"
+        },
+        {
+          "name": "Additional Camera Settings",
+          "mods": [
+            {
+              "name": "FOV",
+              "class": "DominionPlayerController",
+              "reach_spec": "controller",
+              "field": "FOV",
+              "value": "90",
+              "type": "call",
+              "ue_type": "(NewFOV: float)",
+              "note": "inherited from APlayerController",
+              "kind": "call"
+            }
+          ],
+          "show_apply_all": false,
+          "color": "#E0584F"
+        }
+      ],
+      "hotkey": "INS",
+      "startup_folder": "StartUp",
+      "author": "Hi im Tat",
+      "show_apply_all": false,
+      "color": "#7B5FE0",
+      "sub_kits": [
+        {
+          "name": "Actor Building Mode",
+          "folders": [
+            {
+              "name": "StartUp",
+              "mods": [
+                {
+                  "name": "On-screen text",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "Actor Building Mode: Ready",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "umg",
+                  "value_off": "Actor Building Mode: Disabled",
+                  "umg_duration": "3",
+                  "umg_off_duration": "3"
+                }
+              ],
+              "hotkey_mode": "toggle",
+              "show_apply_all": false,
+              "color": "#E0C04F"
+            },
+            {
+              "name": "Grab Actor",
+              "mods": [
+                {
+                  "name": "Grab Actor",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "camera.grab.toggle",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "raw",
+                  "value_off": "camera.grab.toggle"
+                }
+              ],
+              "hotkey": "LEFT_MOUSE_BUTTON",
+              "hotkey_mode": "toggle",
+              "show_apply_all": false
+            },
+            {
+              "name": "Get Actor Name",
+              "mods": [
+                {
+                  "name": "camera.lookat",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "camera.lookat",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "raw"
+                }
+              ],
+              "hotkey": "RIGHT_MOUSE_BUTTON",
+              "hotkey_mode": "set",
+              "show_apply_all": false
+            },
+            {
+              "name": "Undo Grabbed Actor",
+              "mods": [
+                {
+                  "name": "Restore Actor Position",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "camera.grab.cancel",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "raw"
+                },
+                {
+                  "name": "On-screen text",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "Restored",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "umg",
+                  "umg_duration": "3"
+                }
+              ],
+              "hotkey": "MIDDLE_MOUSE_BUTTON",
+              "hotkey_mode": "set",
+              "show_apply_all": false
+            },
+            {
+              "name": "Destroy Viewed Actor",
+              "mods": [
+                {
+                  "name": "Deletes what you look at",
+                  "class": "CheatManager",
+                  "reach_spec": "controller.CheatManager",
+                  "field": "DestroyTarget",
+                  "value": "",
+                  "type": "call",
+                  "ue_type": "()",
+                  "kind": "call"
+                },
+                {
+                  "name": "On-screen text",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "Deleted",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "umg",
+                  "umg_duration": "2"
+                }
+              ],
+              "hotkey": "X",
+              "hotkey_mode": "set",
+              "modifiers": [
+                "LEFT_CONTROL",
+                "LEFT_ALT"
+              ],
+              "show_apply_all": false
+            },
+            {
+              "name": "Rotate Grabbed Actor on its Z-Axis (Left)",
+              "mods": [
+                {
+                  "name": "Rotate Left",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "camera.grab.rotate -1",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "raw"
+                }
+              ],
+              "hotkey": "WHEEL_UP",
+              "hotkey_mode": "set",
+              "show_apply_all": false
+            },
+            {
+              "name": "Rotate Grabbed Actor on its Z-Axis  (Right)",
+              "mods": [
+                {
+                  "name": "Rotate Right",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "camera.grab.rotate \u002B1",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "raw"
+                }
+              ],
+              "hotkey": "WHEEL_DOWN",
+              "hotkey_mode": "set",
+              "show_apply_all": false
+            },
+            {
+              "name": "Move Grabbed Actor - Up",
+              "mods": [
+                {
+                  "name": "Move Actor Up",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "camera.grab.lift \u002B1",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "raw"
+                }
+              ],
+              "hotkey": "WHEEL_UP",
+              "hotkey_mode": "set",
+              "modifiers": [
+                "LEFT_CONTROL"
+              ],
+              "show_apply_all": false
+            },
+            {
+              "name": "Move Grabbed Actor - Down",
+              "mods": [
+                {
+                  "name": "Move Actor Down",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "camera.grab.lift -1",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "raw"
+                }
+              ],
+              "hotkey": "WHEEL_DOWN",
+              "hotkey_mode": "set",
+              "modifiers": [
+                "LEFT_CONTROL"
+              ],
+              "show_apply_all": false
+            },
+            {
+              "name": "Move Grabbed Actor - Forward",
+              "mods": [
+                {
+                  "name": "Move Actor Forward",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "camera.grab.delta \u002B1",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "raw"
+                }
+              ],
+              "hotkey": "WHEEL_UP",
+              "hotkey_mode": "set",
+              "modifiers": [
+                "LEFT_ALT"
+              ],
+              "show_apply_all": false
+            },
+            {
+              "name": "Move Grabbed Actor - Backward",
+              "mods": [
+                {
+                  "name": "Move Actor Backward",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "camera.grab.delta -1",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "raw"
+                }
+              ],
+              "hotkey": "WHEEL_DOWN",
+              "hotkey_mode": "set",
+              "modifiers": [
+                "LEFT_ALT"
+              ],
+              "show_apply_all": false
+            },
+            {
+              "name": "Scale Grabbed Actor - Increase",
+              "mods": [
+                {
+                  "name": "Increase Scale",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "camera.grab.scale \u002B!",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "raw"
+                }
+              ],
+              "hotkey": "WHEEL_UP",
+              "hotkey_mode": "set",
+              "modifiers": [
+                "LEFT_SHIFT"
+              ],
+              "show_apply_all": false
+            },
+            {
+              "name": "Scale Grabbed Actor - Decrease",
+              "mods": [
+                {
+                  "name": "Decrease Scale",
+                  "class": "",
+                  "reach_spec": "",
+                  "field": "",
+                  "value": "camera.grab.scale -1",
+                  "type": "",
+                  "ue_type": "",
+                  "kind": "raw"
+                }
+              ],
+              "hotkey": "WHEEL_DOWN",
+              "hotkey_mode": "set",
+              "modifiers": [
+                "LEFT_SHIFT"
+              ],
+              "show_apply_all": false
+            }
+          ],
+          "hotkey": "T",
+          "modifiers": [
+            "LEFT_CONTROL"
+          ],
+          "startup_folder": "StartUp",
+          "show_apply_all": false,
+          "color": "#A07050",
+          "sub_kits": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "Simple Home",
+  "description": "A Simple Home",
+  "authors": [
+    "FriZ"
+  ],
+  "tags": [
+    "prefab",
+    "simple",
+    "home",
+    "by-friz"
+  ],
+  "image": "simple_home.jpg",
+  "images": [
+    "simple_home.jpg",
+    "simeple_home_01.jpg",
+    "simeple_home_02.jpg"
+  ],
+  "download": "Simple_Home.json"
+}
