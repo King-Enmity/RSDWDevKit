@@ -144,6 +144,33 @@ end
 -- One-liner human-readable string for any value. Never raises, never
 -- triggers a C++ AV. Safe to call from anywhere, including the inside
 -- of error handlers.
+-- Try to recover the asset path of a TSoftObjectPtr-like value on
+-- this UE4SS build : the wrapper itself stringifies to "<invalid>",
+-- but `GetObjectID():GetAssetPathName():ToString()` (plus optional
+-- `GetSubPathString()`) yields the leaf asset name. Mirrors the
+-- chain used by feature_introspect's CDO/actor dumpers so the
+-- Discover-tab Read button surfaces the same shape. Returns the
+-- string path or nil on any failure.
+local function _soft_path_of_safe(v)
+    if v == nil then return nil end
+    local ok_oid, oid = pcall(function() return v:GetObjectID() end)
+    if not ok_oid or oid == nil then return nil end
+    local ok_an, an = pcall(function() return oid:GetAssetPathName() end)
+    if not ok_an or an == nil then return nil end
+    local ok_str, s = pcall(function() return an:ToString() end)
+    if not ok_str or type(s) ~= "string" or s == "" or s == "None" then
+        return nil
+    end
+    local ok_sub, sub = pcall(function() return oid:GetSubPathString() end)
+    if ok_sub and sub ~= nil then
+        local ok_ss, ss = pcall(function() return sub:ToString() end)
+        if ok_ss and type(ss) == "string" and ss ~= "" then
+            return s .. ":" .. ss
+        end
+    end
+    return s
+end
+
 function M.describe(val)
     local kind = M.classify(val)
     if kind == "nil"     then return "<nil>"   end
@@ -181,10 +208,17 @@ function M.describe(val)
         -- UDominionGameplayEffect* out of GameplayEffectsComponent
         -- .ReplicatedInstances). Caps the printout so a 5000-element
         -- AnimNotifyGEs array can't blow the IPC ack budget.
+        --
+        -- For TSoftObjectPtr<X> arrays we recover the per-element
+        -- asset path via _soft_path_of_safe ; that's the same chain
+        -- the CDO dumper uses and is what makes the Discover-tab
+        -- "Read" button on (e.g.) UCheatManagerDeveloperSettings
+        -- .GearPresets surface "DT_GearPreset_TierN" instead of a
+        -- column of "<unloaded>" sentinels.
         local n = 0
         pcall(function() n = #val end)
         if n == 0 then return "TArray[0]: []" end
-        local cap = 32
+        local cap = 64
         local parts = {}
         for i = 1, math.min(n, cap) do
             local el
@@ -195,10 +229,25 @@ function M.describe(val)
             elseif el == nil then
                 repr = "<nil>"
             elseif type(el) == "userdata" then
-                local cls = M.class_name_of(el) or "?"
-                local ok_ts, ts = pcall(function() return tostring(el) end)
-                local ptr = ok_ts and ts or "<ptr?>"
-                repr = string.format("%s (%s)", ptr, cls)
+                -- Try the soft-ref path first ; falls through cleanly
+                -- on non-soft-ref shapes.
+                local soft_path = _soft_path_of_safe(el)
+                if soft_path then
+                    repr = soft_path
+                else
+                    local elem_kind = M.classify(el)
+                    if elem_kind == "uobject" then
+                        local cls = M.class_name_of(el) or "?"
+                        local ok_ts, ts = pcall(function() return tostring(el) end)
+                        local ptr = ok_ts and ts or "<ptr?>"
+                        repr = string.format("%s (%s)", ptr, cls)
+                    elseif elem_kind == "text_like" then
+                        local ok_ts, ts = M.guard(function() return el:ToString() end)
+                        repr = (ok_ts and type(ts) == "string") and ts or "<text>"
+                    else
+                        repr = M.describe(el)
+                    end
+                end
             else
                 repr = tostring(el)
             end

@@ -66,6 +66,17 @@ function M.assets_dir()
     return path
 end
 
+-- ipc\cvars subfolder; cvars.dump writes a marker + (eventually) parsed
+-- runtime CVar JSON here. The actual UE log it triggers a write into
+-- lives under %LOCALAPPDATA%\<Project>\Saved\Logs\ ; the offline Python
+-- parser is what populates the structured JSON.
+function M.cvars_dir()
+    local d = M.ipc_dir(); if not d then return nil end
+    local path = d .. "\\cvars"
+    pcall(os.execute, ('if not exist "%s" mkdir "%s"'):format(path, path))
+    return path
+end
+
 -- Specific files we care about. Returning nil signals "couldn't resolve
 -- the mod root" ; callers should treat that as a soft failure (no disk
 -- I/O this session) rather than crashing.

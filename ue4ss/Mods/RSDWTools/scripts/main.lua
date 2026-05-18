@@ -21,6 +21,13 @@ end
 
 local SHM_POLL_MS = 10
 
+local function should_log_bridge_line(line)
+    if line == "player.loc" then return false end
+    if line == "camera.rig.clear" then return false end
+    if tostring(line or ""):sub(1, 19) == "camera.rig.pose.set" then return false end
+    return true
+end
+
 local function register_console()
     if not RegisterConsoleCommandHandler then
         print("[RSDWTools] RegisterConsoleCommandHandler unavailable.")
@@ -165,7 +172,7 @@ local function start_shm_command_loop()
                 -- tab calls player.loc at 2 Hz) so the UE4SS console stays
                 -- usable for debugging other features. Add more verbs to
                 -- this set as polling clients are added.
-                if line ~= "player.loc" then
+                if should_log_bridge_line(line) then
                     print("[RSDWTools] bridge_shm recv: " .. tostring(line))
                 end
             end

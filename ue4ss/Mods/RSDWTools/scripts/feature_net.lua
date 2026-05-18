@@ -109,10 +109,14 @@ function M.local_controller()
     -- stale on map change ; IsLocalController() will either error out
     -- (caught by pcall) or return false on a torn-down controller, in
     -- which case we re-resolve.
-    if is_valid(_cached_pc) and _cached_pc.IsLocalController then
-        local ok, mine = pcall(function() return _cached_pc:IsLocalController() end)
+    local cached = _cached_pc
+    if is_valid(cached) then
+        local ok, mine = pcall(function()
+            if not cached.IsLocalController then return false end
+            return cached:IsLocalController()
+        end)
         if ok and mine then
-            return _cached_pc
+            return cached
         end
     end
     _cached_pc = find_local_via_isLocal() or find_local_via_uehelpers()

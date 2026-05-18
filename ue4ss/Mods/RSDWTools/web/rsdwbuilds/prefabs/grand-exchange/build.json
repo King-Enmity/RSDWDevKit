@@ -1,0 +1,20 @@
+{
+  "name": "Grand Exchange",
+  "description": "A trading world for progressive players, Trade your items at this central point!",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "prefab",
+    "grand",
+    "exchange",
+    "by-mixolution"
+  ],
+  "image": "grand_exchange.webp",
+  "images": [
+    "grand_exchange.webp",
+    "grand_exchange_2.webp"
+  ],
+  "download": "Grand_Exchange.json",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/199"
+}

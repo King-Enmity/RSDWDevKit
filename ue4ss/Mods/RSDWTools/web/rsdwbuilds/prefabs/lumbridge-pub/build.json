@@ -1,0 +1,19 @@
+{
+  "name": "Lumbridge Pub",
+  "description": "Lumbridge Pub from Inevitance's Lumbridge Lite.",
+  "authors": [
+    "Inevitance"
+  ],
+  "tags": [
+    "prefab",
+    "lumbridge",
+    "pub",
+    "by-inevitance"
+  ],
+  "image": "Lumbridge_Pub.jpg",
+  "images": [
+    "Lumbridge_Pub.jpg"
+  ],
+  "download": "Lumbridge_Pub.json",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/236"
+}

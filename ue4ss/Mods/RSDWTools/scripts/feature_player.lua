@@ -1927,5 +1927,753 @@ function M.summon(value_str)
     return true, s
 end
 
+local _ksl_cdo = nil
+local function get_kismet_system_library()
+    if _ksl_cdo and _ksl_cdo.IsValid and _ksl_cdo:IsValid() then return _ksl_cdo end
+    if not StaticFindObject then return nil end
+    local ok, obj = pcall(StaticFindObject, "/Script/Engine.Default__KismetSystemLibrary")
+    if ok and obj and obj.IsValid and obj:IsValid() then
+        _ksl_cdo = obj
+        return _ksl_cdo
+    end
+    return nil
+end
+
+local function is_valid_uobject(obj)
+    return obj and obj.IsValid and obj:IsValid()
+end
+
+local function normalize_uclass_path(class_path)
+    local cp = class_path and tostring(class_path):match("^%s*(.-)%s*$") or ""
+    if cp == "" then return cp end
+
+    local quoted = cp:match("^[%w_]+%'(.+)'$")
+    if quoted and quoted ~= "" then cp = quoted end
+
+    if cp:find("^/Game/") then
+        if cp:find("%.") then
+            if not cp:find("_C$") then cp = cp .. "_C" end
+        else
+            local leaf = cp:match("([^/]+)$")
+            if leaf and leaf ~= "" then
+                local asset_leaf = leaf:gsub("_C$", "")
+                local package_path = cp
+                if asset_leaf ~= leaf then
+                    package_path = cp:sub(1, #cp - #leaf) .. asset_leaf
+                end
+                cp = package_path .. "." .. asset_leaf .. "_C"
+            elseif not cp:find("_C$") then
+                cp = cp .. "_C"
+            end
+        end
+    end
+    return cp
+end
+
+local function safe_uobject_label(obj)
+    if not is_valid_uobject(obj) then return "<invalid>" end
+    local ok_full, full = pcall(function() return obj:GetFullName() end)
+    if ok_full and full and tostring(full) ~= "" then return tostring(full) end
+    local ok_name, name = pcall(function() return obj:GetFName():ToString() end)
+    if ok_name and name and tostring(name) ~= "" then return tostring(name) end
+    return tostring(obj)
+end
+
+local function resolve_uclass_via_kismet_softclass(class_path)
+    local cp = normalize_uclass_path(class_path)
+    if cp == "" then return nil, "empty class path", cp end
+    if cp:sub(1, 1) ~= "/" then
+        return nil, "soft-class load needs a fully qualified /Game or /Script path", cp
+    end
+
+    local ksl = get_kismet_system_library()
+    if not ksl then return nil, "KismetSystemLibrary CDO not found", cp end
+
+    local ok_path, soft_path = pcall(function() return ksl:MakeSoftClassPath(cp) end)
+    if not ok_path then return nil, "MakeSoftClassPath failed: " .. tostring(soft_path), cp end
+    if soft_path == nil then return nil, "MakeSoftClassPath returned nil", cp end
+
+    local ok_ref, soft_ref = pcall(function() return ksl:Conv_SoftClassPathToSoftClassRef(soft_path) end)
+    if not ok_ref then return nil, "Conv_SoftClassPathToSoftClassRef failed: " .. tostring(soft_ref), cp end
+    if soft_ref == nil then return nil, "Conv_SoftClassPathToSoftClassRef returned nil", cp end
+
+    local ok_load, loaded_class = pcall(function() return ksl:LoadClassAsset_Blocking(soft_ref) end)
+    if ok_load and is_valid_uobject(loaded_class) then
+        return loaded_class, "LoadClassAsset_Blocking", cp
+    end
+
+    local blocking_err = ok_load and "returned null" or tostring(loaded_class)
+    return nil, "LoadClassAsset_Blocking " .. blocking_err, cp
+end
+
+function M.load_class(value_str)
+    local s = value_str and value_str:match("^%s*(.-)%s*$") or ""
+    if s == "" then return false, "usage: world.class.load <ClassPath>" end
+
+    local normalized = normalize_uclass_path(s)
+    local already_loaded = nil
+    if StaticFindObject then
+        local ok_find, found = pcall(StaticFindObject, normalized)
+        if ok_find and is_valid_uobject(found) then already_loaded = found end
+    end
+
+    local loaded_class, route, cp = resolve_uclass_via_kismet_softclass(s)
+    if not loaded_class then
+        if already_loaded then
+            local detail = string.format("already loaded %s -> %s; soft-class probe failed: %s",
+                normalized, safe_uobject_label(already_loaded), tostring(route))
+            print("[RSDWTools] world.class.load " .. detail)
+            return true, detail
+        end
+        return false, tostring(route) .. " (normalized: " .. tostring(cp or normalized) .. ")"
+    end
+
+    local state = already_loaded and "already loaded" or "loaded"
+    local detail = string.format("%s %s -> %s via %s",
+        state, cp, safe_uobject_label(loaded_class), route)
+    print("[RSDWTools] world.class.load " .. detail)
+    return true, detail
+end
+
+-- =============================================================================
+-- world.spawn : the deliberate, transform-aware counterpart to world.summon.
+--
+-- Routes through UGameplayStatics::BeginDeferredActorSpawnFromClass +
+-- FinishSpawningActor (the engine pair that the BP `Spawn Actor From Class`
+-- node compiles to). Two reasons this is preferable to the cheat-console
+-- `summon` route :
+--
+--   1. We get a real transform : aim-trace impact point + pawn yaw, instead
+--      of the actor materialising at PC origin with no rotation control.
+--   2. The spawn is *deferred* : the actor exists but BeginPlay hasn't run
+--      yet, so any required UPROPERTYs (`ItemData` on world items,
+--      `Switchables` on switch bases, etc) can be written before construction
+--      logic kicks in. Without this, e.g. a freshly-summoned
+--      ABP_RuntimeSpawnedWorldItem_C constructs as an empty broken pickup
+--      because BeginPlay reads its (null) ItemData.
+--
+-- Args (whitespace-separated, optional JSON tail) :
+--     <ClassPath>                  ; spawn at aim trace, no field writes
+--     <ClassPath> {"Field":value}  ; same + write fields between Begin/Finish
+--
+-- ClassPath accepts the same forms as world.summon :
+--     /Game/.../BP_Foo.BP_Foo_C        (BPGC)
+--     /Script/Dominion.SwitchableDoor  (native)
+--     ShortName_C                      (resolved via StaticFindObject sweep)
+--
+-- JSON value coercion :
+--     number        -> assigned directly (UE4SS coerces float/int)
+--     bool          -> assigned directly
+--     string "/..." -> LoadObject<UObject>(value), assigned as object ref
+--     string other  -> assigned as FString
+--   Arrays / structs / TSubclassOf NOT supported yet ; if you need one,
+--   spawn bare then use probe.write to set it field-by-field.
+
+-- The two GameplayStatics UFunctions we need. Cached after first lookup.
+local _gpl_cdo = nil
+local function get_gameplay_statics()
+    if _gpl_cdo and _gpl_cdo.IsValid and _gpl_cdo:IsValid() then return _gpl_cdo end
+    if not StaticFindObject then return nil end
+    local ok, obj = pcall(StaticFindObject, "/Script/Engine.Default__GameplayStatics")
+    if ok and obj and obj.IsValid and obj:IsValid() then
+        _gpl_cdo = obj
+        return _gpl_cdo
+    end
+    return nil
+end
+
+-- Resolve a class path string into a UClass*. Tries, in order :
+--   1. StaticFindObject  (already loaded -> instant)
+--   2. LoadObject        (forces package load if needed)
+--   3. LoadAsset         (UE4SS package/streaming fallback)
+--   4. UE4SS's FindFirstOf("Class") name sweep (last resort, slow)
+local function resolve_uclass(class_path)
+    local cp = normalize_uclass_path(class_path)
+
+    if StaticFindObject then
+        local ok, c = pcall(StaticFindObject, cp)
+        if ok and c and c.IsValid and c:IsValid() then return c end
+    end
+    if LoadObject then
+        local ok, c = pcall(LoadObject, cp)
+        if ok and c and c.IsValid and c:IsValid() then return c end
+    end
+    if LoadAsset then
+        local ok, c = pcall(LoadAsset, cp)
+        if ok and c and c.IsValid and c:IsValid() then return c end
+    end
+    -- Package-preload fallback. LoadObject on the class itself can fail
+    -- ("Failed to find class.") when the package hasn't been loaded yet,
+    -- because UE4SS's LoadObject binds to StaticLoadObject<UObject> which
+    -- does NOT route through the package loader the way the engine's
+    -- `summon` console command does (that one calls StaticLoadClass which
+    -- DOES). Mirror summon's trick : issue an `obj load name=<package>`
+    -- via KismetSystemLibrary::ExecuteConsoleCommand to force the engine
+    -- to load the .uasset, then re-run StaticFindObject for the class.
+    -- Verified 2026-05-15 : without this AbyssalDemon / DragonLesserGreen
+    -- / MagicBeast resolved via world.summon but not world.spawn even
+    -- though the path strings were identical.
+    if StaticFindObject then
+        local package_path = cp:match("^(.-)%.[^./]+$")
+        if package_path and package_path ~= "" and package_path:sub(1, 1) == "/" then
+            local feature_net = require("feature_net")
+            local pc = feature_net.local_controller()
+            local ksl = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
+            if pc and ksl and ksl.IsValid and ksl:IsValid() then
+                pcall(function() ksl:ExecuteConsoleCommand(pc, "obj load name=" .. package_path, pc) end)
+                local ok_c, c = pcall(StaticFindObject, cp)
+                if ok_c and c and c.IsValid and c:IsValid() then return c end
+            end
+        end
+    end
+    -- FindFirstOf(name) is the WRONG API here : it returns the first
+    -- *instance* whose CLASS is named `name`, not a UClass named `name`.
+    -- For BPGC short-name lookup we need to enumerate BlueprintGeneratedClass
+    -- (and Class for natives), then linear-match by GetFName(). Slow but
+    -- correct ; cached as soon as we hit so subsequent spawns of the same
+    -- short name are instant via StaticFindObject path.
+    local short = cp:match("([^/.]+)$") or cp
+    local short_no_a = short
+    if short:sub(1, 1) == "A" and #short > 1 then short_no_a = short:sub(2) end
+
+    if FindAllOf then
+        for _, container_class in ipairs({ "BlueprintGeneratedClass", "Class" }) do
+            local ok_a, all = pcall(FindAllOf, container_class)
+            if ok_a and type(all) == "table" then
+                for _, candidate in ipairs(all) do
+                    if candidate and candidate.IsValid and candidate:IsValid() then
+                        local ok_n, fname = pcall(function() return candidate:GetFName():ToString() end)
+                        if ok_n and (fname == short or fname == short_no_a) then
+                            return candidate
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Camera-forward line trace, returns hit location (or pawn loc fallback) + yaw.
+-- Self-contained ; doesn't import feature_grab to keep the dep graph clean.
+local function compute_spawn_transform()
+    local pawn = get_pawn()
+    if not pawn then return nil, "no pawn" end
+    local feature_net = require("feature_net")
+    local pc = feature_net.local_controller()
+    if not pc then return nil, "no controller" end
+
+    -- Pull camera viewpoint from the controller (works for both first-person
+    -- and the spectator/oculus cases ; controller.GetPlayerViewPoint follows
+    -- the active view target).
+    local cam_loc, cam_rot
+    local ok = pcall(function()
+        local l = { X = 0, Y = 0, Z = 0 }
+        local r = { Pitch = 0, Yaw = 0, Roll = 0 }
+        pc:GetPlayerViewPoint(l, r)
+        cam_loc, cam_rot = l, r
+    end)
+    if not (ok and cam_loc and cam_rot) then
+        -- Fallback : just use pawn location with pawn yaw, raise a touch.
+        local ok2, l = pcall(function() return pawn:K2_GetActorLocation() end)
+        local ok3, r = pcall(function() return pawn:K2_GetActorRotation() end)
+        if not (ok2 and ok3 and l and r) then return nil, "no transform source" end
+        return {
+            loc = { X = l.X, Y = l.Y, Z = l.Z + 50.0 },
+            rot = { Pitch = 0, Yaw = r.Yaw or 0, Roll = 0 },
+        }, nil
+    end
+
+    local pitch = (cam_rot.Pitch or 0) * math.pi / 180.0
+    local yaw   = (cam_rot.Yaw   or 0) * math.pi / 180.0
+    local cp    = math.cos(pitch)
+    local fx, fy, fz = cp * math.cos(yaw), cp * math.sin(yaw), math.sin(pitch)
+    local DIST = 600.0
+    local start_v = { X = cam_loc.X, Y = cam_loc.Y, Z = cam_loc.Z }
+    local end_v   = {
+        X = cam_loc.X + fx * DIST,
+        Y = cam_loc.Y + fy * DIST,
+        Z = cam_loc.Z + fz * DIST,
+    }
+
+    -- Trace via KismetSystemLibrary so the world-context arg is implicit.
+    local ksl = StaticFindObject and StaticFindObject("/Script/Engine.Default__KismetSystemLibrary") or nil
+    local hit_loc = end_v  -- default if trace misses : just use the end point
+    if ksl and ksl:IsValid() then
+        local world = (function()
+            local feature_field = require("feature_field")
+            local w = feature_field.resolve_root("world")
+            return w
+        end)()
+        if world then
+            local hit = {}
+            local zcol = { R = 0, G = 0, B = 0, A = 0 }
+            local ignore = { pawn }
+            local ok_t, did_hit = pcall(function()
+                return ksl:LineTraceSingle(world, start_v, end_v, "TraceTypeQuery1",
+                    false, ignore, "EDrawDebugTrace::None", hit, true,
+                    zcol, zcol, 0.0)
+            end)
+            if ok_t and did_hit and hit.Location then
+                hit_loc = { X = hit.Location.X, Y = hit.Location.Y, Z = hit.Location.Z }
+            end
+        end
+    end
+
+    return {
+        loc = hit_loc,
+        rot = { Pitch = 0, Yaw = (cam_rot.Yaw or 0), Roll = 0 },
+    }, nil
+end
+
+-- Attempt to apply a field-write table { name = value } to the deferred actor.
+-- Object-ref strings (leading '/') get LoadObject'd. Everything else is
+-- assigned directly and we let UE4SS's binding sort out coercion ; if a write
+-- traps we just record it in the warnings list and keep going.
+local function apply_field_writes(actor, fields)
+    local warnings = {}
+    if type(fields) ~= "table" then return warnings end
+    for name, value in pairs(fields) do
+        local resolved = value
+        if type(value) == "string" and value:sub(1, 1) == "/" then
+            local ok_o, obj = false, nil
+            if LoadObject then
+                ok_o, obj = pcall(LoadObject, value)
+            end
+            if not (ok_o and obj and obj.IsValid and obj:IsValid()) and StaticFindObject then
+                ok_o, obj = pcall(StaticFindObject, value)
+            end
+            if ok_o and obj and obj.IsValid and obj:IsValid() then
+                resolved = obj
+            else
+                warnings[#warnings + 1] = string.format(
+                    "field %q : object path %q did not resolve "..
+                    "(LoadObject + StaticFindObject both failed ; "..
+                    "verify against tools/cache/asset_index.json)",
+                    name, value)
+                resolved = nil
+            end
+        end
+        if resolved ~= nil then
+            local ok_w, err = pcall(function() actor[name] = resolved end)
+            if not ok_w then
+                warnings[#warnings + 1] = string.format("field %q write failed: %s",
+                    name, tostring(err))
+            end
+        end
+    end
+    return warnings
+end
+
+-- Tiny flat-object JSON parser. Supports exactly what the world.spawn
+-- field-write contract needs : a top-level object whose values are
+-- string / number / boolean / null. No nested objects, no arrays, no
+-- escape-heavy strings (just \" and \\). Hand-rolled so the mod has zero
+-- third-party Lua dependencies (dkjson isn't shipped in this UE4SS build).
+-- Returns ( table, nil ) on success or ( nil, errstring ) on failure.
+local function _parse_flat_json_object(src)
+    local i, n = 1, #src
+    local function skip_ws()
+        while i <= n do
+            local c = src:sub(i, i)
+            if c == " " or c == "\t" or c == "\n" or c == "\r" then i = i + 1
+            else break end
+        end
+    end
+    local function expect(ch)
+        skip_ws()
+        if src:sub(i, i) ~= ch then
+            return false, string.format("expected %q at %d, got %q", ch, i, src:sub(i, i))
+        end
+        i = i + 1
+        return true
+    end
+    local function parse_string()
+        if src:sub(i, i) ~= '"' then return nil, "string must start with \"" end
+        i = i + 1
+        local buf = {}
+        while i <= n do
+            local c = src:sub(i, i)
+            if c == '"' then i = i + 1; return table.concat(buf) end
+            if c == "\\" then
+                local nx = src:sub(i + 1, i + 1)
+                if     nx == '"' then buf[#buf + 1] = '"'
+                elseif nx == "\\" then buf[#buf + 1] = "\\"
+                elseif nx == "/"  then buf[#buf + 1] = "/"
+                elseif nx == "n"  then buf[#buf + 1] = "\n"
+                elseif nx == "t"  then buf[#buf + 1] = "\t"
+                elseif nx == "r"  then buf[#buf + 1] = "\r"
+                else return nil, "unsupported escape \\" .. nx end
+                i = i + 2
+            else
+                buf[#buf + 1] = c; i = i + 1
+            end
+        end
+        return nil, "unterminated string"
+    end
+    local function parse_value()
+        skip_ws()
+        local c = src:sub(i, i)
+        if c == '"' then return parse_string() end
+        if c == "t" and src:sub(i, i + 3) == "true"  then i = i + 4; return true end
+        if c == "f" and src:sub(i, i + 4) == "false" then i = i + 5; return false end
+        if c == "n" and src:sub(i, i + 3) == "null"  then i = i + 4; return nil end
+        -- number : grab the longest numeric run, let tonumber validate.
+        local s, e = src:find("^%-?%d+%.?%d*[eE]?[%+%-]?%d*", i)
+        if s == i then
+            local nstr = src:sub(s, e)
+            local num = tonumber(nstr)
+            if not num then return nil, "bad number " .. nstr end
+            i = e + 1
+            return num
+        end
+        return nil, "unexpected token at " .. i
+    end
+
+    skip_ws()
+    if not expect("{") then return nil, "root must be object {...}" end
+    local out = {}
+    skip_ws()
+    if src:sub(i, i) == "}" then i = i + 1; return out end
+    while true do
+        skip_ws()
+        local key, kerr = parse_string()
+        if not key then return nil, "key: " .. tostring(kerr) end
+        local ok_c, cerr = expect(":")
+        if not ok_c then return nil, cerr end
+        local val, verr = parse_value()
+        if val == nil and verr then return nil, "value for "..key..": "..verr end
+        out[key] = val
+        skip_ws()
+        local sep = src:sub(i, i)
+        if sep == "," then i = i + 1
+        elseif sep == "}" then i = i + 1; return out
+        else return nil, "expected , or } after value, got " .. sep end
+    end
+end
+
+-- world.spawn implementation.
+function M.spawn(value_str)
+    local s = value_str and value_str:match("^%s*(.-)%s*$") or ""
+    if s == "" then
+        return false, "usage: world.spawn <ClassPath> [{json fields}]"
+    end
+
+    -- Split off optional JSON tail. JSON starts at the first '{' that
+    -- follows whitespace : that lets class paths with no spaces but
+    -- no JSON parse cleanly, and JSON-bearing forms split on the brace
+    -- regardless of how many spaces preceded it.
+    local class_path, json_tail
+    local brace_at = s:find("%s+{")
+    if brace_at then
+        class_path = s:sub(1, brace_at - 1):match("^%s*(.-)%s*$")
+        json_tail  = s:sub(brace_at):match("^%s*(.*)$")
+    else
+        class_path = s
+        json_tail  = nil
+    end
+
+    if class_path == "" then return false, "empty class path" end
+
+    local fields = nil
+    if json_tail and json_tail ~= "" then
+        local parsed, perr = _parse_flat_json_object(json_tail)
+        if not parsed then return false, "JSON parse failed: " .. tostring(perr) end
+        fields = parsed
+    end
+
+    local uclass = resolve_uclass(class_path)
+    if not uclass then return false, "could not resolve class : " .. class_path end
+
+    local feature_net = require("feature_net")
+    local pc = feature_net.local_controller()
+    if not pc then return false, "no player controller" end
+
+    local gpl = get_gameplay_statics()
+    if not gpl then return false, "GameplayStatics CDO not found" end
+
+    local xform, err = compute_spawn_transform()
+    if not xform then return false, "transform: " .. tostring(err) end
+
+    -- Build the FTransform arg expected by BeginDeferredActorSpawnFromClass.
+    -- UE expects { Rotation: FQuat, Translation: FVector, Scale3D: FVector } ;
+    -- UE4SS accepts a plain Lua table and will marshal a rotator-shaped Rot
+    -- into the quat for us as long as we pass it under the Rotation key.
+    -- Safer route : pass the rotator under "Rotator" in the BP_Spawn variant ;
+    -- for the GameplayStatics overload we hand-build the quat from yaw.
+    local yaw_rad = (xform.rot.Yaw or 0) * math.pi / 360.0  -- half-angle
+    local sin_y, cos_y = math.sin(yaw_rad), math.cos(yaw_rad)
+    local spawn_xform = {
+        Rotation    = { X = 0, Y = 0, Z = sin_y, W = cos_y },
+        Translation = { X = xform.loc.X, Y = xform.loc.Y, Z = xform.loc.Z },
+        Scale3D     = { X = 1, Y = 1, Z = 1 },
+    }
+
+    -- ESpawnActorCollisionHandlingMethod (UE5 ordering) :
+    --   0 Undefined  1 AlwaysSpawn  2 AdjustIfPossibleButAlwaysSpawn
+    --   3 AdjustIfPossibleButDontSpawnIfColliding  4 DontSpawnIfColliding
+    -- Round 1 of this verb used 4 by mistake (assumed Always-Adjust) which
+    -- silently rejected any spawn with a capsule near world geometry
+    -- (e.g. NPCs at the aim trace). 2 = adjust-but-always-spawn matches
+    -- what `summon` effectively does. ETransformScaleMethod : 0 = MultiplyWithRoot.
+    local actor
+    local ok_b, err_b = pcall(function()
+        actor = gpl:BeginDeferredActorSpawnFromClass(
+            pc, uclass, spawn_xform,
+            2,                  -- AdjustIfPossibleButAlwaysSpawn
+            pc,                 -- Owner
+            0                   -- TransformScaleMethod
+        )
+    end)
+    if not ok_b then
+        return false, "BeginDeferredActorSpawnFromClass trapped: " .. tostring(err_b)
+    end
+    if not (actor and actor.IsValid and actor:IsValid()) then
+        return false, "BeginDeferredActorSpawnFromClass returned null"
+    end
+
+    -- Persistence opt-in : every AWorldActor descendant carries
+    -- `bRegisterAsRuntimeSpawned` (offset 0x310 on the native base). The
+    -- save/load subsystem only enrolls actors whose flag is true at
+    -- BeginPlay-time. CDO defaults vary per class : some are true (the
+    -- ones the user empirically confirmed persist when designer-placed
+    -- and re-spawned), some are false. Force true here so any class can
+    -- survive a save round-trip when spawned via this verb. pcall'd so
+    -- non-AWorldActor classes (no such field) don't trap.
+    pcall(function() actor.bRegisterAsRuntimeSpawned = true end)
+
+    local warnings = {}
+    if fields then
+        warnings = apply_field_writes(actor, fields)
+    end
+
+    local ok_f, err_f = pcall(function()
+        gpl:FinishSpawningActor(actor, spawn_xform, 0)
+    end)
+    if not ok_f then
+        return false, "FinishSpawningActor trapped: " .. tostring(err_f)
+    end
+
+    -- Stash for the `lastspawned` reach root so reskin / configure verbs
+    -- can target this actor right after spawn (e.g. set_asset on its
+    -- StaticMeshComponent.StaticMesh).
+    pcall(function()
+        local feature_field = require("feature_field")
+        feature_field.set_last_spawned(actor)
+    end)
+
+    -- Build a one-line ack with class + (x,y,z) + warnings count.
+    local detail = string.format("%s @ (%.1f,%.1f,%.1f)",
+        class_path, xform.loc.X, xform.loc.Y, xform.loc.Z)
+    if #warnings > 0 then
+        detail = detail .. string.format(" [%d field warnings]", #warnings)
+        for _, w in ipairs(warnings) do
+            print("[RSDWTools] world.spawn warn: " .. w)
+        end
+    end
+    print(string.format("[RSDWTools] world.spawn %s", detail))
+    return true, detail
+end
+
+function M.spawn_safe(value_str)
+    local s = value_str and value_str:match("^%s*(.-)%s*$") or ""
+    if s == "" then
+        return false, "usage: world.spawn.safe <ClassPath>"
+    end
+
+    local has_field_tail = s:find("%s+{") ~= nil
+    local ok_spawn, spawn_detail = M.spawn(s)
+    if ok_spawn then
+        return true, "spawn " .. tostring(spawn_detail)
+    end
+
+    local spawn_error = tostring(spawn_detail)
+    if has_field_tail then
+        return false, "spawn failed and summon fallback skipped because JSON field writes would be lost: " .. spawn_error
+    end
+    if spawn_error:find("FinishSpawningActor", 1, true) then
+        return false, "spawn failed after deferred actor creation; summon fallback skipped: " .. spawn_error
+    end
+
+    local ok_summon, summon_detail = M.summon(s)
+    if ok_summon then
+        return true, "fallback=summon spawn failed (" .. spawn_error .. "); summon " .. tostring(summon_detail)
+    end
+    return false, "spawn failed (" .. spawn_error .. "); summon fallback failed: " .. tostring(summon_detail)
+end
+
+-- =============================================================================
+-- world.spawn.item : the *correct* path for spawning AWorldItem pickups.
+--
+-- world.spawn (the generic verb) constructs a bare AWorldItem, which means
+-- the result has a mesh/icon but isn't enrolled with UWorldItemSubsystem :
+-- the collect prompt appears but doesn't actually grant the item, magnet
+-- pull doesn't work, and the pickup is invisible to inventory queries.
+-- The internal API the game uses for its own loot drops is :
+--
+--   UItemHelperLibrary::SpawnAndLaunchItem_Sync(WorldContext, Params, OutFail)
+--                                                  -> AWorldItem*
+--
+-- where Params is FItemSpawnParameters (Dumps/CXXHeaderDump/Dominion.hpp:3357).
+-- That function does the full subsystem enrolment, transform-snap, optional
+-- magnet binding, optional launch impulse, and returns the actor + a failure
+-- reason string we can echo back into the ack.
+--
+-- Args :
+--     <ItemDataPath>                ; spawn 1 of this item at aim, default class
+--     <ItemDataPath> <count>        ; spawn N
+--     <ItemDataPath> <count> <ItemActorClass>
+--                                    ; override the AWorldItem subclass
+--                                      (default: ABP_RuntimeSpawnedWorldItem_C)
+--
+-- All numbers are decimal int. Count clamps to >= 1.
+
+-- Hard-default item-actor class. The base RuntimeSpawnedWorldItem BP : works
+-- for every standard pickup (resources, equipment, consumables). Override
+-- with the third arg if you specifically want the no-delay-magnet variant
+-- or the processing-station output variant.
+local DEFAULT_ITEM_ACTOR_CLASS_PATH =
+    "/Game/Gameplay/WorldItems/BP_RuntimeSpawnedWorldItem.BP_RuntimeSpawnedWorldItem_C"
+
+local _ihl_cdo = nil
+local function get_item_helper_library()
+    if _ihl_cdo and _ihl_cdo.IsValid and _ihl_cdo:IsValid() then return _ihl_cdo end
+    if not StaticFindObject then return nil end
+    local ok, obj = pcall(StaticFindObject, "/Script/Dominion.Default__ItemHelperLibrary")
+    if ok and obj and obj.IsValid and obj:IsValid() then
+        _ihl_cdo = obj
+        return _ihl_cdo
+    end
+    return nil
+end
+
+function M.spawn_item(value_str)
+    local s = value_str and value_str:match("^%s*(.-)%s*$") or ""
+    if s == "" then
+        return false, "usage: world.spawn.item <ItemDataPath> [count] [ItemActorClass]"
+    end
+
+    -- Whitespace-tokenise. Item paths never contain spaces so this is
+    -- unambiguous : 1st token = ItemData, 2nd = optional count int,
+    -- 3rd = optional class path/short-name.
+    local tokens = {}
+    for tok in s:gmatch("%S+") do tokens[#tokens + 1] = tok end
+    local item_data_path  = tokens[1]
+    local count_arg       = tonumber(tokens[2])
+    local class_path_arg  = tokens[3]
+
+    local count = count_arg or 1
+    if count < 1 then count = 1 end
+
+    -- Resolve the AWorldItem subclass. Default to the standard runtime-
+    -- spawned BP unless the caller specified one.
+    local class_path = class_path_arg or DEFAULT_ITEM_ACTOR_CLASS_PATH
+    local item_class = resolve_uclass(class_path)
+    if not item_class then
+        return false, "could not resolve item actor class : " .. class_path
+    end
+
+    -- Resolve the ItemData asset. LoadObject -> StaticFindObject fallback.
+    local function resolve_obj(path)
+        if LoadObject then
+            local ok, o = pcall(LoadObject, path)
+            if ok and o and o.IsValid and o:IsValid() then return o end
+        end
+        if StaticFindObject then
+            local ok, o = pcall(StaticFindObject, path)
+            if ok and o and o.IsValid and o:IsValid() then return o end
+        end
+        return nil
+    end
+    local item_data = resolve_obj(item_data_path)
+    if not item_data then
+        return false, "could not resolve ItemData : " .. item_data_path ..
+                      "  (verify against tools/cache/asset_index.json by_leaf)"
+    end
+
+    local feature_net = require("feature_net")
+    local pc = feature_net.local_controller()
+    if not pc then return false, "no player controller" end
+
+    local ihl = get_item_helper_library()
+    if not ihl then return false, "ItemHelperLibrary CDO not found" end
+
+    -- World context : pawn works (it's an AActor in a level). Using PC
+    -- can hit edge cases when the controller is between possessions.
+    local pawn = get_pawn()
+    if not pawn then return false, "no pawn" end
+
+    local xform, err = compute_spawn_transform()
+    if not xform then return false, "transform: " .. tostring(err) end
+
+    -- Quat from yaw (half-angle) ; same conversion as world.spawn.
+    local yaw_rad = (xform.rot.Yaw or 0) * math.pi / 360.0
+    local sin_y, cos_y = math.sin(yaw_rad), math.cos(yaw_rad)
+
+    -- Build FItemSpawnParameters. UE4SS marshals Lua tables into structs by
+    -- field name, so we mirror the C++ layout exactly. Every field is set
+    -- (even no-op ones) so we don't accidentally inherit garbage from the
+    -- caller's stack frame :
+    local params = {
+        ItemClass                            = item_class,
+        bCreateItem                          = true,
+        bMagnetize                           = false,    -- player has to walk over to pick it up
+        SpawnedItemData                      = item_data,
+        CopiedItem                           = nil,
+        Count                                = count,
+        Transform = {
+            Rotation    = { X = 0, Y = 0, Z = sin_y, W = cos_y },
+            Translation = { X = xform.loc.X, Y = xform.loc.Y, Z = xform.loc.Z + 50.0 },
+            Scale3D     = { X = 1, Y = 1, Z = 1 },
+        },
+        LaunchDirection                      = { X = 0, Y = 0, Z = 1 },
+        LaunchSpeed                          = 0.0,
+        LaunchAngleVariance                  = 0.0,
+        bSkipFloorSafetyCheck                = false,
+        OwnerController                      = pc,
+        bSpawnOnlyForController              = false,
+        PlayerControllerThatDroppedItem      = pc,
+    }
+
+    -- Out-param : SpawnAndLaunchItem_Sync writes a failure reason string
+    -- into a FString&. UE4SS marshals out-FStrings via a {} table reference ;
+    -- passing a bare Lua string raises "no table was on the stack". The
+    -- written value is read back from the return tuple.
+    local spawned_actor, fail_reason
+    local ok_s, err_s = pcall(function()
+        local fail = {}
+        spawned_actor, fail_reason = ihl:SpawnAndLaunchItem_Sync(pawn, params, fail)
+    end)
+    if not ok_s then
+        return false, "SpawnAndLaunchItem_Sync trapped: " .. tostring(err_s)
+    end
+
+    -- The function may legitimately return nil with a non-empty fail_reason
+    -- (e.g. the floor-safety check rejected the location). Surface both.
+    if not (spawned_actor and spawned_actor.IsValid and spawned_actor:IsValid()) then
+        local why = (fail_reason and tostring(fail_reason)) or "unknown reason"
+        if why == "" then why = "(empty failure reason)" end
+        return false, "ItemHelper returned null : " .. why
+    end
+
+    -- Persistence opt-in : SpawnAndLaunchItem_Sync constructs the actor
+    -- via NewObject + DispatchBeginPlay internally, so we don't have a
+    -- deferred init window here. Set the flag *after* BeginPlay ; the
+    -- save subsystem checks the flag at save-time, not at spawn-time, so
+    -- a post-construction write still enrolls the actor.
+    pcall(function() spawned_actor.bRegisterAsRuntimeSpawned = true end)
+
+    -- Stash for the `lastspawned` reach root (see M.spawn).
+    pcall(function()
+        local feature_field = require("feature_field")
+        feature_field.set_last_spawned(spawned_actor)
+    end)
+
+    local detail = string.format("%dx %s @ (%.1f,%.1f,%.1f)",
+        count, item_data_path, xform.loc.X, xform.loc.Y, xform.loc.Z)
+    print(string.format("[RSDWTools] world.spawn.item %s", detail))
+    return true, detail
+end
+
 return M
 

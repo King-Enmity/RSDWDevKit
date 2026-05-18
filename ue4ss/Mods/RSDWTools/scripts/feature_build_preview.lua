@@ -1318,27 +1318,55 @@ function M.force_place()
     if not bmc then return false, "build mode unavailable: " .. tostring(berr) end
     if not bmc.Server_SpawnBuilding then return false, "BMC has no Server_SpawnBuilding" end
 
-    -- Get the active piece_data the engine is currently placing. The
-    -- BMC stores this as TWeakObjectPtr<UBuildingPieceData> ;
-    -- deref_weak handles both the wrapper and a direct hard ptr.
-    local pd_weak
-    pcall(function() pd_weak = bmc.CurrentlyPlacingPieceData end)
-    local pd = deref_weak(pd_weak)
-    if not is_valid(pd) then
-        return false, "no CurrentlyPlacingPieceData on BMC ; arm a piece first (build menu, build.preview.piece, etc.)"
-    end
-
-    local pd_idx
-    pcall(function() pd_idx = pd.BuildingPieceDataIndex end)
-    if type(pd_idx) ~= "number" then
-        return false, "CurrentlyPlacingPieceData has no BuildingPieceDataIndex"
-    end
-
+    -- Locate the live PreviewPiece actor. We read both the placement
+    -- transform AND the piece_data_index off this actor : the engine
+    -- can clear bmc.CurrentlyPlacingPieceData the moment its UI-side
+    -- placement check goes red (e.g. user is aiming into a "blocked"
+    -- zone), even while PreviewPiece itself stays parented to the
+    -- reticle. The actor mirrors both BuildingPieceDataIndex (replicated,
+    -- OnRep_BuildingPieceDataIndex at offset 0x0738) and a direct
+    -- BuildingPieceData* (0x0730), so we can recover the index
+    -- without relying on the (sometimes-stale) BMC weak ptr.
     local pp_weak
     pcall(function() pp_weak = bmc.PreviewPiece end)
     local pp = deref_weak(pp_weak)
     if not is_valid(pp) then
         return false, "no PreviewPiece on BMC ; engine dropped the preview"
+    end
+
+    -- Resolve piece_data_index. Try the live preview actor first
+    -- (works in zones where the engine has soft-cleared the BMC's
+    -- CurrentlyPlacingPieceData but the visual ghost is still alive),
+    -- then BuildingPieceData on the actor, then fall back to the
+    -- BMC's TWeakObjectPtr<UBuildingPieceData>.
+    local pd_idx, pd_source
+    pcall(function() pd_idx = pp.BuildingPieceDataIndex end)
+    if type(pd_idx) == "number" then pd_source = "PreviewPiece" end
+
+    if type(pd_idx) ~= "number" then
+        local pd_on_actor
+        pcall(function() pd_on_actor = pp.BuildingPieceData end)
+        if is_valid(pd_on_actor) then
+            pcall(function() pd_idx = pd_on_actor.BuildingPieceDataIndex end)
+            if type(pd_idx) == "number" then pd_source = "PreviewPiece.BuildingPieceData" end
+        end
+    end
+
+    local pd  -- kept for the trailing GetName() log line
+    if type(pd_idx) ~= "number" then
+        local pd_weak
+        pcall(function() pd_weak = bmc.CurrentlyPlacingPieceData end)
+        pd = deref_weak(pd_weak)
+        if is_valid(pd) then
+            pcall(function() pd_idx = pd.BuildingPieceDataIndex end)
+            if type(pd_idx) == "number" then pd_source = "BMC.CurrentlyPlacingPieceData" end
+        end
+    end
+
+    if type(pd_idx) ~= "number" then
+        return false, "could not resolve piece_data_index from PreviewPiece, "
+            .. "PreviewPiece.BuildingPieceData, or BMC.CurrentlyPlacingPieceData "
+            .. "; arm a piece first (build menu, build.preview.piece, etc.)"
     end
 
     local loc, rot
@@ -1364,10 +1392,23 @@ function M.force_place()
     end
 
     local pd_short
-    pcall(function() pd_short = pd:GetName() end)
+    if is_valid(pd) then
+        pcall(function() pd_short = pd:GetName() end)
+    end
+    if not pd_short then
+        -- Fall back to the BuildingPieceData hung off the preview actor
+        -- so the log line stays informative when we resolved the index
+        -- straight off PreviewPiece.BuildingPieceDataIndex.
+        local pd_on_actor
+        pcall(function() pd_on_actor = pp.BuildingPieceData end)
+        if is_valid(pd_on_actor) then
+            pcall(function() pd_short = pd_on_actor:GetName() end)
+        end
+    end
     print(string.format(
-        "[RSDWTools] build.preview.force_place: spawned idx=%d (%s) at (%.1f, %.1f, %.1f) yaw=%.1f",
-        pd_idx, pd_short or "<unknown>", loc.X or 0, loc.Y or 0, loc.Z or 0, yaw_deg))
+        "[RSDWTools] build.preview.force_place: spawned idx=%d (%s, src=%s) at (%.1f, %.1f, %.1f) yaw=%.1f",
+        pd_idx, pd_short or "<unknown>", pd_source or "?",
+        loc.X or 0, loc.Y or 0, loc.Z or 0, yaw_deg))
     return true, string.format("placed idx=%d", pd_idx)
 end
 

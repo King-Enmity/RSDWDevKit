@@ -1,0 +1,21 @@
+{
+  "name": "Lumbridge General Store",
+  "description": "Lumbridge General Store from Inevitance's Lumbridge Lite.",
+  "authors": [
+    "Inevitance"
+  ],
+  "tags": [
+    "prefab",
+    "lumbridge",
+    "general",
+    "store",
+    "by-inevitance"
+  ],
+  "image": "Lumbridge_General_Store.jpg",
+  "images": [
+    "Lumbridge_General_Store.jpg",
+    "lumbridge_general_store_2.jpg"
+  ],
+  "download": "Lumbridge_General_Store.json",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/236"
+}

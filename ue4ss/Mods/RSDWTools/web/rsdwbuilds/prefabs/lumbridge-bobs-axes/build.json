@@ -1,0 +1,21 @@
+{
+  "name": "Lumbridge Bobs Axes",
+  "description": "Bobs Axes from Inevitance's Lumbridge Lite",
+  "authors": [
+    "Inevitance"
+  ],
+  "tags": [
+    "prefab",
+    "lumbridge",
+    "bobs",
+    "axes",
+    "by-inevitance"
+  ],
+  "image": "Lumbridge_Bobs_Axes.jpg",
+  "images": [
+    "Lumbridge_Bobs_Axes.jpg",
+    "Lumbridge_Bobs_Axes_2.jpg"
+  ],
+  "download": "Lumbridge_Bobs_Axes.json",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/236"
+}

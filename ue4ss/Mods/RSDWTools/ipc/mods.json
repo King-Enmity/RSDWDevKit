@@ -68,14 +68,36 @@
       "color": "#7B5FE0"
     },
     {
-      "name": "Change Worlds (This may break your .sav)",
+      "name": "Create Dev Worlds (Apply from Main Menu)",
       "mods": [
         {
-          "name": "Gym Dev World",
+          "name": "L_GymSelectorHub",
           "class": "DominionPlayerController",
           "reach_spec": "controller",
           "field": "SwitchLevel",
           "value": "L_GymSelectorHub",
+          "type": "call",
+          "ue_type": "(URL: FString)",
+          "note": "inherited from APlayerController",
+          "kind": "call"
+        },
+        {
+          "name": "L_Env_Asset_Gym",
+          "class": "DominionPlayerController",
+          "reach_spec": "controller",
+          "field": "SwitchLevel",
+          "value": "L_Env_Asset_Gym",
+          "type": "call",
+          "ue_type": "(URL: FString)",
+          "note": "inherited from APlayerController",
+          "kind": "call"
+        },
+        {
+          "name": "L_Gymstreaming",
+          "class": "DominionPlayerController",
+          "reach_spec": "controller",
+          "field": "SwitchLevel",
+          "value": "L_Gymstreaming",
           "type": "call",
           "ue_type": "(URL: FString)",
           "note": "inherited from APlayerController",
@@ -94,7 +116,8 @@
         }
       ],
       "author": "Hi im Tat",
-      "color": "#E0584F"
+      "show_apply_all": false,
+      "color": "#E0C04F"
     }
   ],
   "kits": []

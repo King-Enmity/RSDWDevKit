@@ -1,0 +1,22 @@
+{
+  "name": "Dowdun All Items",
+  "description": "An Official Jagex Featured Cathedral Themed World",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "build",
+    "dowdun",
+    "all",
+    "items",
+    "by-mixolution"
+  ],
+  "image": "dowdun_all_items.webp",
+  "images": [
+    "dowdun_all_items.webp",
+    "dowdun_all_items_2.webp"
+  ],
+  "download": "Dowdun_All_Items.json",
+  "youtube": "https://www.youtube.com/watch?v=LU4-MwBti8Y",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/214"
+}

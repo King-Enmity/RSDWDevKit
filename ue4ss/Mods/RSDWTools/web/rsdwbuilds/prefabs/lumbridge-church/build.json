@@ -1,0 +1,20 @@
+{
+  "name": "Lumbridge Church",
+  "description": "Lumbridge Church from Inevitance's Lumbridge Lite.",
+  "authors": [
+    "Inevitance"
+  ],
+  "tags": [
+    "prefab",
+    "lumbridge",
+    "church",
+    "by-inevitance"
+  ],
+  "image": "Lumbridge_Church.jpg",
+  "images": [
+    "Lumbridge_Church.jpg",
+    "lumbridge_church_2.webp"
+  ],
+  "download": "Lumbridge_Church.json",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/236"
+}

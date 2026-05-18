@@ -1,0 +1,19 @@
+{
+  "name": "Lumbridge Smithing",
+  "description": "Lumbridge Smithing from Inevitance's Lumbridge Lite.",
+  "authors": [
+    "Inevitance"
+  ],
+  "tags": [
+    "prefab",
+    "lumbridge",
+    "smithing",
+    "by-inevitance"
+  ],
+  "image": "Lumbridge_Smithing.jpg",
+  "images": [
+    "Lumbridge_Smithing.jpg"
+  ],
+  "download": "Lumbridge_Smithing.json",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/236"
+}

@@ -2,6 +2,23 @@
   "version": 5,
   "folders": [
     {
+      "name": "Clear All Dropped Items",
+      "mods": [
+        {
+          "name": "Deletes Items",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.foreach BP_RuntimeSpawnedWorldItem_C call K2_DestroyActor 1",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#4F8FE0"
+    },
+    {
       "name": "Enable Damage to Buildings",
       "mods": [
         {

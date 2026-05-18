@@ -1,0 +1,22 @@
+{
+  "name": "Fellhollow All Items",
+  "description": "A Fellhollow Death Themed World.",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "build",
+    "fellhollow",
+    "all",
+    "items",
+    "by-mixolution"
+  ],
+  "image": "fellhollow_all_items.webp",
+  "images": [
+    "fellhollow_all_items.webp",
+    "fellhollow_all_items_2.webp"
+  ],
+  "download": "Fellhollow_All_Items.json",
+  "youtube": "https://www.youtube.com/watch?v=_PbAkVtT1dk",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/149"
+}

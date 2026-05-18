@@ -75,7 +75,10 @@ end
 -- canonical multiplayer-correct resolver (IsLocalController()-based).
 local feature_net = require("feature_net")
 local function get_pc()
-    return feature_net.local_controller()
+    local ok, pc = pcall(function() return feature_net.local_controller() end)
+    if ok then return pc end
+    print("[RSDWTools.wheel] local controller lookup failed: " .. tostring(pc))
+    return nil
 end
 
 local function modifiers_held(pc, mod_fkeys)

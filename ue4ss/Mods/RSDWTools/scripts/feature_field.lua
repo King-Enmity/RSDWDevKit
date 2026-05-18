@@ -120,11 +120,78 @@ local function find_first_of(name)
     return nil, "no live instance of " .. name
 end
 
+-- Module-private handle to "the actor most recently spawned via
+-- world.spawn / world.spawn.item". Set by feature_player calling
+-- M.set_last_spawned() right after FinishSpawningActor / SpawnAndLaunch.
+-- Used by the `lastspawned` reach root so reskin / configure verbs can
+-- target the just-spawned actor without needing a stable handle path.
+-- Cleared automatically when the handle becomes invalid (actor destroyed,
+-- world torn down) so a stale read surfaces as "not currently live"
+-- rather than crashing inside :GetClass().
+local _last_spawned = nil
+
+function M.set_last_spawned(actor)
+    _last_spawned = actor
+end
+
+-- Named bookmarks for actor handles. Solves the wiring problem : after
+-- spawning a second actor, `lastspawned` rolls over and the first one
+-- becomes unreachable. `world.bookmark <slot>` stashes the current
+-- lastspawned under <slot> ; the `slot:<name>` reach-root resolves it
+-- back. Bookmarks are lost on save/reload (UObject pointers don't
+-- survive) which is fine -- recipient .sav doesn't need them, only the
+-- live wiring session does.
+local _bookmarks = {}
+
+local function valid_slot_name(name)
+    if type(name) ~= "string" or name == "" then return false end
+    return name:match("^[%w_][%w_%-]*$") ~= nil
+end
+
+function M.bookmark_last_spawned(slot)
+    if not valid_slot_name(slot) then
+        return false, "invalid slot name '" .. tostring(slot) .. "' (use [A-Za-z0-9_-])"
+    end
+    if not _last_spawned or not is_valid(_last_spawned) then
+        return false, "no live lastspawned actor to bookmark"
+    end
+    _bookmarks[slot] = _last_spawned
+    return true, slot
+end
+
+function M.forget_bookmark(slot)
+    if not valid_slot_name(slot) then
+        return false, "invalid slot name"
+    end
+    if _bookmarks[slot] == nil then return false, "no such slot: " .. slot end
+    _bookmarks[slot] = nil
+    return true, slot
+end
+
+function M.list_bookmarks()
+    local out = {}
+    for slot, actor in pairs(_bookmarks) do
+        local alive = (actor ~= nil) and is_valid(actor)
+        out[#out + 1] = slot .. "=" .. (alive and "live" or "dead")
+        if not alive then _bookmarks[slot] = nil end
+    end
+    table.sort(out)
+    return out
+end
+
 -- Engine-defined root keys. Each resolver returns (obj | nil).
 -- Ordering is alphabetical except for `world` which several others depend
 -- on -- those use get_world() directly so the table itself stays a flat
 -- key->resolver map.
 local ROOTS = {
+    lastspawned = function()
+        if not _last_spawned then return nil end
+        if not is_valid(_last_spawned) then
+            _last_spawned = nil
+            return nil
+        end
+        return _last_spawned
+    end,
     pawn = function()
         return feature_actor.get_local_pawn()
     end,
@@ -171,6 +238,16 @@ local ROOTS = {
         if not pc then return nil end
         local ok, h = pcall(function() return pc:GetHUD() end)
         if ok and is_valid(h) then return h end
+        return nil
+    end,
+    lookat = function()
+        local ok_req, feature_grab = pcall(require, "feature_grab")
+        if not ok_req or not feature_grab or not feature_grab.pick_actor_under_reticle then
+            return nil
+        end
+        local actor = nil
+        pcall(function() actor = select(1, feature_grab.pick_actor_under_reticle()) end)
+        if is_valid(actor) then return actor end
         return nil
     end,
     world = function()
@@ -359,6 +436,22 @@ local function resolve_root_key(root_key)
         if short == "" then return nil, "subsystem: missing class name" end
         local obj, err = find_first_of(short)
         if not obj then return nil, "subsystem '" .. short .. "': " .. tostring(err) end
+        return obj
+    end
+    -- slot:<name> -- resolves to an actor previously stashed via
+    -- `world.bookmark <name>`. Lets wiring verbs reference a non-
+    -- lastspawned actor without needing GUID lookups. Stale slot
+    -- (actor destroyed) auto-clears here so callers get a clean
+    -- "no such slot" instead of a crash inside is_valid.
+    if root_key:sub(1, 5) == "slot:" then
+        local name = root_key:sub(6)
+        if name == "" then return nil, "slot: missing name" end
+        local obj = _bookmarks[name]
+        if obj == nil then return nil, "no bookmark '" .. name .. "'" end
+        if not is_valid(obj) then
+            _bookmarks[name] = nil
+            return nil, "bookmark '" .. name .. "' actor no longer live"
+        end
         return obj
     end
     -- find:<ClassShortName> -- universal "any live instance" probe.
@@ -576,6 +669,86 @@ function M.set_object(args_str)
     return true, string.format("%s.%s = <%s>", reach_spec, field_path, class_name)
 end
 
+-- player.field.set_asset <reachSpec> <fieldPath> <assetPath>
+--
+-- LoadObject the asset at <assetPath> (e.g. /Game/.../SM_Foo.SM_Foo) and
+-- assign the resulting UObject reference into <fieldPath>. This is the
+-- backbone of approach A : reskin a spawned host actor by overwriting
+-- its StaticMeshComponent.StaticMesh (or any other UObject* property).
+--
+-- Differs from set_object (which finds a live instance of a class) and
+-- set (which writes coerced primitives). Asset-typed properties want a
+-- pointer to the loaded asset object itself.
+--
+-- Example:
+--   player.field.set_asset lastspawned StaticMeshComponent.StaticMesh \
+--     /Game/Gameplay/World/Rocks/SM_Cliff_01.SM_Cliff_01
+function M.set_asset(args_str)
+    if not args_str or args_str == "" then
+        return false, "usage: player.field.set_asset <reachSpec> <fieldPath> <assetPath>"
+    end
+    local reach_spec, field_path, asset_path = args_str:match("^(%S+)%s+(%S+)%s+(%S+)$")
+    if not (reach_spec and field_path and asset_path) then
+        return false, "usage: player.field.set_asset <reachSpec> <fieldPath> <assetPath>"
+    end
+    -- Resolve the asset. Three-stage : LoadObject (already-mounted
+    -- package, fastest), LoadAsset (UE4SS-specific async loader that
+    -- handles unmounted/streaming chunks ; required for assets in
+    -- districts the player isn't currently in), then StaticFindObject
+    -- as the no-load fallback. Without LoadAsset, anything outside the
+    -- player's current chunk gets reported as "asset lookup failed".
+    local asset
+    if LoadObject then
+        local ok, o = pcall(LoadObject, asset_path)
+        if ok and o then asset = o end
+    end
+    if (not asset) and LoadAsset then
+        local ok, o = pcall(LoadAsset, asset_path)
+        if ok and o then asset = o end
+    end
+    if (not asset) and StaticFindObject then
+        local ok, o = pcall(StaticFindObject, asset_path)
+        if ok and o then asset = o end
+    end
+    if not asset or not is_valid(asset) then
+        return false, "asset lookup failed (LoadObject + LoadAsset + StaticFindObject all returned nil): " .. tostring(asset_path)
+    end
+    local target, rerr = M.resolve_root(reach_spec)
+    if not target then return false, rerr end
+    local steps, perr = parse_path(field_path)
+    if not steps then return false, "field path parse: " .. perr end
+    local parent, leaf, walk_err = walk_to_parent(target, steps)
+    if not parent then return false, walk_err end
+    -- Direct field assignment writes the property but does NOT invalidate
+    -- the component's cached render state, so the mesh keeps drawing the
+    -- old asset. Component subobjects expose SetStaticMesh / SetSkeletalMesh
+    -- methods that handle the render-state update for us. Try the setter
+    -- first (most common case : leaf is `StaticMesh` or `SkeletalMesh` on
+    -- a *Component parent), fall back to direct assignment for non-mesh
+    -- asset properties (textures, materials, sound cues, etc.).
+    local ok, werr = pcall(function()
+        if leaf.kind == "member" then
+            if leaf.name == "StaticMesh" and parent.SetStaticMesh then
+                parent:SetStaticMesh(asset)
+                return
+            end
+            if leaf.name == "SkeletalMesh" and parent.SetSkeletalMesh then
+                parent:SetSkeletalMesh(asset, true)
+                return
+            end
+            if leaf.name == "SkeletalMeshAsset" and parent.SetSkeletalMeshAsset then
+                parent:SetSkeletalMeshAsset(asset, true)
+                return
+            end
+            parent[leaf.name] = asset
+        elseif leaf.kind == "index"  then parent[leaf.index] = asset
+        elseif leaf.kind == "key"    then parent[leaf.key]   = asset
+        end
+    end)
+    if not ok then return false, "asset write failed: " .. tostring(werr) end
+    return true, string.format("%s.%s = <asset %s>", reach_spec, field_path, asset_path)
+end
+
 -- player.field.add <reachSpec> <containerPath> <value>
 function M.add(args_str)
     if not args_str or args_str == "" then
@@ -591,12 +764,35 @@ function M.add(args_str)
     if not steps then return false, "container path parse: " .. perr end
     local container, walk_err = walk_full(target, steps)
     if not container then return false, walk_err end
-    local v = coerce_token(value)
+    -- Round 55 : if `value` looks like a reach-root spec (lastspawned,
+    -- slot:foo, pawn, etc.), resolve it to the live UObject before
+    -- handing to TArray::Add. Otherwise object arrays get fed a bare
+    -- string and UE4SS's TArray adapter interprets it as an index
+    -- ("TArray index out of range"). Anything that doesn't resolve
+    -- falls through to coerce_token so scalar arrays (FString, int,
+    -- gameplay tag) still work as before.
+    local v
+    local resolved = M.resolve_root(value)
+    if resolved ~= nil and is_valid(resolved) then
+        v = resolved
+    else
+        v = coerce_token(value)
+    end
     local ok, werr = pcall(function() container:Add(v) end)
     if ok then return true, string.format("%s.%s :Add(%s)", reach_spec, container_path, tostring(v)) end
     local ok2, werr2 = pcall(function() container:AddTag(v) end)
     if ok2 then return true, string.format("%s.%s :AddTag(%s)", reach_spec, container_path, tostring(v)) end
-    return false, "add failed: " .. tostring(werr) .. " / " .. tostring(werr2)
+    -- Round 55b : UE4SS TArray adapter doesn't expose :Add for plain
+    -- TArray<UObject*> -- the method-name lookup falls through to the
+    -- numeric __index handler and raises "TArray index out of range".
+    -- Fall back to append-via-indexed-write : container[Num+1] = v.
+    -- UE4SS auto-grows the TArray when assigning past the current end.
+    local n
+    local ok_n, num = pcall(function() return container:Num() end)
+    if ok_n and type(num) == "number" then n = num else n = 0 end
+    local ok3, werr3 = pcall(function() container[n + 1] = v end)
+    if ok3 then return true, string.format("%s.%s [%d] = %s (appended)", reach_spec, container_path, n + 1, tostring(v)) end
+    return false, "add failed: " .. tostring(werr) .. " / " .. tostring(werr2) .. " / " .. tostring(werr3)
 end
 
 -- player.field.remove <reachSpec> <containerPath> <indexOrValue>
@@ -677,12 +873,17 @@ function M.call(args_str)
     for tok in tail:gmatch("%S+") do arg_strs[#arg_strs + 1] = tok end
     local coerced = {}
     for i, s in ipairs(arg_strs) do
-        local b = parse_bool(s)
-        if b ~= nil then coerced[i] = b
+        local resolved = M.resolve_root(s)
+        if resolved ~= nil and is_valid(resolved) then
+            coerced[i] = resolved
         else
-            local n = parse_number(s)
-            if n then coerced[i] = n
-            else coerced[i] = s end
+            local b = parse_bool(s)
+            if b ~= nil then coerced[i] = b
+            else
+                local n = parse_number(s)
+                if n then coerced[i] = n
+                else coerced[i] = s end
+            end
         end
     end
 

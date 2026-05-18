@@ -1,0 +1,1 @@
+1778805659	probe.widget.spawn	/Game/UI/MainMenu/CharacterSelect/WBP_CharacterInfoPanelWidget.WBP_CharacterInfoPanelWidget_C

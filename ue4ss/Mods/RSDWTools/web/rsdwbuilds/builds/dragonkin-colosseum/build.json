@@ -1,0 +1,21 @@
+{
+  "name": "Dragonkin Colosseum",
+  "description": "This is the DRAGONKIN COLOSSEUM, a Colosseum, reminiscent of the Senntisten Colosseum where RuneScape players faced off against Kerapac, the Bound.",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "build",
+    "dragonkin",
+    "colosseum",
+    "by-mixolution"
+  ],
+  "image": "Dragonkin_Colosseum.webp",
+  "images": [
+    "Dragonkin_Colosseum.webp",
+    "Dragonkin_Colosseum_2.webp"
+  ],
+  "download": "Dragonkin_Colosseum.json",
+  "youtube": "https://www.youtube.com/watch?v=Ks_kXseZdy8",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/123"
+}

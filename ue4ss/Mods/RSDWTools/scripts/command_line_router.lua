@@ -79,11 +79,31 @@
 --   player.aimpitch <on|off>          (RangedAttack min/target pitch angles unlocked to -90)
 --   player.arrowrange <cm>            (RangedAttack.MaxProjectileTraceDistance; clamp 1000..100000)
 --   player.revivedelay <sec>          (PlayerRespawnComponent.SelfReviveDelay; clamp 2..60)
+--   world.class.load <ClassPath>      (diagnostic: Kismet soft-class load without spawning)
+--   world.spawn.safe <ClassPath>      (spawn first, fall back to native summon)
 --   player.critchance (removed in 11.5; see cheats-to-revisit.md section 13)
 --   player.foliagerange (removed in 11.5; see cheats-to-revisit.md section 14)
 --   player.spell.cancel               (PlayerMagicComponent.Server_CancelSpell on both magic components)
 --   actor.spectate <name>             (PlayerController.SetViewTargetWithBlend to named actor)
 --   actor.spectate.reset              (SetViewTargetWithBlend back to the local pawn)
+--   camera.debug.status               (diagnose stock Unreal DebugCamera state)
+--   camera.debug.enable|disable|toggle
+--   camera.debug.force_restore
+--   camera.debug.speed <scale>
+--   camera.rig.start [speed]
+--   camera.rig.stop
+--   camera.rig.capture <name>
+--   camera.rig.pose.set <name> <x> <y> <z> <pitch> <yaw> <roll> <fov>
+--   camera.rig.poses.file <filename>
+--   camera.rig.delete <name>
+--   camera.rig.clear
+--   camera.rig.list
+--   camera.rig.goto <name> [seconds]
+--   camera.rig.goto.file <filename> <name> [seconds]
+--   camera.rig.play <from> <to> [seconds]
+--   camera.rig.play.file <filename>
+--   camera.rig.fov <degrees>
+--   camera.rig.lookat <actorName|off>
 --   player.get <key>                  (reads one of: time, jump.count, jump.hold, buildings,
 --                                                 tp.delay, tp.vfx, tp.timeout,
 --                                                 health, maxhealth, walkspeed, jumpvel,
@@ -139,6 +159,28 @@
 --                                      regional state is overriding it. Fires OnRep_WeatherType.)
 --   world.weather.region_priority <n> (RAW : write Priority on every ARegionSpecificGlobalWeatherActor.
 --                                      Higher wins when overlapping ; useful to test biome routing.)
+--   world.progress.probe              (locate AWorldProgressManager and count defeated boss flags)
+--   world.progress.has <InternalName>       (membership check for boss defeated flag)
+--   world.progress.defeat <InternalName>    (SaveGame TSet<FString>, e.g. ai_boss_velgar)
+--   world.progress.undefeat <InternalName>  (remove that boss flag again)
+--   world.progress.value.list               (known TaggedWorldProgressValues aliases)
+--   world.progress.value.get <Alias>        (GetWorldProgressValue for known aliases)
+--   world.progress.value.set <Alias> <Num>  (SetWorldProgressValue for known aliases)
+--   world.progress.hook.has <AssetPath>     (UWorldHook triggered membership check)
+--   world.progress.hook.probe <AssetPath>   (UWorldHook state diagnostics)
+--   world.progress.hook.trigger <AssetPath> (EXPERIMENTAL UWorldHook trigger)
+--   world.progress.hook.fire <AssetPath>    (EXPERIMENTAL direct OnTriggered call)
+--   world.progress.hook.mark <AssetPath>    (directly add to WorldHooksTriggered)
+--   world.progress.hook.reset <AssetPath>   (safe direct remove from WorldHooksTriggered)
+--   world.resource.probe [reachSpec]        (placed UResourceRespawnComponent SaveGame state)
+--   world.resource.set [reachSpec] <amount> (SetResourceAmount on placed resource)
+--   world.resource.pause [reachSpec] <on|off>
+--   world.resource.take [reachSpec]         (TakeResource on placed resource)
+--   world.chest.probe [reachSpec]           (placed AWorldChest SaveGame state)
+--   world.chest.state [reachSpec] <state>   (unopened|opened|emptied|0|1|2)
+--   world.chest.respawn_disabled [reachSpec] <on|off>
+--   world.spud.persist <reachSpec> <stableName>  (EXPERIMENTAL AddPersistentGlobalObjectWithName)
+--   world.spud.unpersist <reachSpec>             (EXPERIMENTAL RemovePersistentGlobalObject)
 --
 -- Round 26 round A -- Generic uniform-schema write verbs. See
 -- docs/MODS_CATALOG_METHODOLOGY.md section 5. These four verbs back every
@@ -185,6 +227,7 @@ local feature_field  = require("feature_field")
 local feature_probe  = require("feature_probe")
 local feature_introspect = require("feature_introspect")
 local feature_grab = require("feature_grab")
+local feature_camera = require("feature_camera")
 
 -- Round 30: when true the probe.* verbs print failure detail to the
 -- UE4SS console (in addition to the ack going back to the WPF). Useful
@@ -214,6 +257,9 @@ end
 local feature_ge = require("feature_ge")
 local feature_ui = require("feature_ui")
 local feature_world = require("feature_world")
+local feature_progress = require("feature_progress")
+local feature_spud = require("feature_spud")
+local feature_persistence = require("feature_persistence")
 local feature_foreach = require("feature_foreach")
 local feature_buildings = require("feature_buildings")
 local feature_build_preview = require("feature_build_preview")
@@ -224,6 +270,7 @@ local feature_skills = require("feature_skills")
 local feature_debug_hud = require("feature_debug_hud")
 local feature_debug_watch = require("feature_debug_watch")
 local feature_net = require("feature_net")
+local feature_cvars = require("feature_cvars")
 
 local M = {}
 
@@ -398,6 +445,28 @@ function M._dispatch(line)
             print("[RSDWTools][probe.find_class] " .. line:sub(18) .. " -> " .. tostring(detail))
         end
         return false, "probe.find_class failed: " .. tostring(detail)
+    end
+
+    -- probe.widget.spawn / .remove / .list
+    --   Construct a UserWidget directly from its blueprint class and
+    --   push it to the viewport. Lets us test whether dev menu pages
+    --   (and any other catalog-surfaced widget) render in shipping
+    --   builds independent of their normal input gating. See
+    --   feature_probe.widget_* for the actual logic.
+    if line:sub(1, 19) == "probe.widget.spawn " then
+        local ok, detail = feature_probe.widget_spawn(line:sub(20))
+        if ok then return true, "ok probe.widget.spawn " .. tostring(detail) end
+        return false, "probe.widget.spawn failed: " .. tostring(detail)
+    end
+    if line == "probe.widget.remove" or line:sub(1, 20) == "probe.widget.remove " then
+        local ok, detail = feature_probe.widget_remove(line:sub(21))
+        if ok then return true, "ok probe.widget.remove " .. tostring(detail) end
+        return false, "probe.widget.remove failed: " .. tostring(detail)
+    end
+    if line == "probe.widget.list" then
+        local ok, detail = feature_probe.widget_list("")
+        if ok then return true, "ok probe.widget.list " .. tostring(detail) end
+        return false, "probe.widget.list failed: " .. tostring(detail)
     end
 
     -- player.* cheat / read verbs. Grouped under one prefix check so every
@@ -664,6 +733,11 @@ function M._dispatch(line)
             local ok, detail = feature_field.set_object(line:sub(25))
             if ok then return true, "ok player.field.set_object " .. tostring(detail) end
             return false, "player.field.set_object failed: " .. tostring(detail)
+        end
+        if line:sub(1, 23) == "player.field.set_asset " then
+            local ok, detail = feature_field.set_asset(line:sub(24))
+            if ok then return true, "ok player.field.set_asset " .. tostring(detail) end
+            return false, "player.field.set_asset failed: " .. tostring(detail)
         end
         if line:sub(1, 23) == "player.field.set_index " then
             local ok, detail = feature_field.set_index(line:sub(24))
@@ -1064,11 +1138,154 @@ function M._dispatch(line)
         return false, "unknown player.* verb"
     end
 
+    -- cvars.dump
+    --   Experimental : asks the engine to enumerate every live
+    --   IConsoleManager entry by issuing the stock Help +
+    --   DumpConsoleCommands + DumpConsoleVariables console commands
+    --   through KismetSystemLibrary::ExecuteConsoleCommand. The actual
+    --   listings land in the game log
+    --   (%LOCALAPPDATA%\<Project>\Saved\Logs\<Project>.log) and the
+    --   HelpConsoleCommands.html file under <Project>\Saved\. We drop
+    --   a small marker JSON at ipc\cvars\cvars-dump-marker.json so the
+    --   offline tools\Parse-RuntimeCVars.py knows which files to parse
+    --   and when the dump was triggered. No UI yet per design ; this
+    --   is the raw experimental verb. Sits at top level (NOT inside the
+    --   world.* prefix guard) because the verb name does not start
+    --   with "world.".
+    if line == "cvars.dump" then
+        local ok, detail = feature_cvars.dump()
+        if ok then return true, "ok cvars.dump " .. tostring(detail) end
+        return false, "cvars.dump failed: " .. tostring(detail)
+    end
+
+    if line == "cvars.filming" or line:sub(1, 14) == "cvars.filming " then
+        local ok, detail = feature_cvars.filming(trim(line:sub(14)))
+        if ok then return true, "ok cvars.filming " .. tostring(detail) end
+        return false, "cvars.filming failed: " .. tostring(detail)
+    end
+
+    if line:sub(1, 9) == "cvars.set" then
+        local ok, detail = feature_cvars.set(trim(line:sub(10)))
+        if ok then return true, "ok cvars.set " .. tostring(detail) end
+        return false, "cvars.set failed: " .. tostring(detail)
+    end
+
     -- world.* verbs: time-of-day, weather (Round 17).
     if line:sub(1, 6) == "world." then
         local function arg_after(verb)
             local rest = line:sub(#verb + 1)
             return (tostring(rest or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+        end
+
+        if line == "world.progress.probe" or line:sub(1, 21) == "world.progress.probe " then
+            local ok, detail = feature_progress.probe(arg_after("world.progress.probe"))
+            if ok then return true, "ok world.progress.probe " .. tostring(detail) end
+            return false, "world.progress.probe failed: " .. tostring(detail)
+        end
+        if line == "world.progress.has" or line:sub(1, 19) == "world.progress.has " then
+            local ok, detail = feature_progress.has(arg_after("world.progress.has"))
+            if ok then return true, "ok world.progress.has " .. tostring(detail) end
+            return false, "world.progress.has failed: " .. tostring(detail)
+        end
+        if line == "world.progress.defeat" or line:sub(1, 22) == "world.progress.defeat " then
+            local ok, detail = feature_progress.defeat(arg_after("world.progress.defeat"))
+            if ok then return true, "ok world.progress.defeat " .. tostring(detail) end
+            return false, "world.progress.defeat failed: " .. tostring(detail)
+        end
+        if line == "world.progress.undefeat" or line:sub(1, 24) == "world.progress.undefeat " then
+            local ok, detail = feature_progress.undefeat(arg_after("world.progress.undefeat"))
+            if ok then return true, "ok world.progress.undefeat " .. tostring(detail) end
+            return false, "world.progress.undefeat failed: " .. tostring(detail)
+        end
+        if line == "world.progress.value.list" or line:sub(1, #"world.progress.value.list ") == "world.progress.value.list " then
+            local ok, detail = feature_progress.value_list(arg_after("world.progress.value.list"))
+            if ok then return true, "ok world.progress.value.list " .. tostring(detail) end
+            return false, "world.progress.value.list failed: " .. tostring(detail)
+        end
+        if line == "world.progress.value.get" or line:sub(1, #"world.progress.value.get ") == "world.progress.value.get " then
+            local ok, detail = feature_progress.value_get(arg_after("world.progress.value.get"))
+            if ok then return true, "ok world.progress.value.get " .. tostring(detail) end
+            return false, "world.progress.value.get failed: " .. tostring(detail)
+        end
+        if line == "world.progress.value.set" or line:sub(1, #"world.progress.value.set ") == "world.progress.value.set " then
+            local ok, detail = feature_progress.value_set(arg_after("world.progress.value.set"))
+            if ok then return true, "ok world.progress.value.set " .. tostring(detail) end
+            return false, "world.progress.value.set failed: " .. tostring(detail)
+        end
+        if line == "world.progress.hook.probe" or line:sub(1, #"world.progress.hook.probe ") == "world.progress.hook.probe " then
+            local ok, detail = feature_progress.hook_probe(arg_after("world.progress.hook.probe"))
+            if ok then return true, "ok world.progress.hook.probe " .. tostring(detail) end
+            return false, "world.progress.hook.probe failed: " .. tostring(detail)
+        end
+        if line == "world.progress.hook.has" or line:sub(1, #"world.progress.hook.has ") == "world.progress.hook.has " then
+            local ok, detail = feature_progress.hook_has(arg_after("world.progress.hook.has"))
+            if ok then return true, "ok world.progress.hook.has " .. tostring(detail) end
+            return false, "world.progress.hook.has failed: " .. tostring(detail)
+        end
+        if line == "world.progress.hook.fire" or line:sub(1, #"world.progress.hook.fire ") == "world.progress.hook.fire " then
+            local ok, detail = feature_progress.fire_hook(arg_after("world.progress.hook.fire"))
+            if ok then return true, "ok world.progress.hook.fire " .. tostring(detail) end
+            return false, "world.progress.hook.fire failed: " .. tostring(detail)
+        end
+        if line == "world.progress.hook.mark" or line:sub(1, #"world.progress.hook.mark ") == "world.progress.hook.mark " then
+            local ok, detail = feature_progress.mark_hook(arg_after("world.progress.hook.mark"))
+            if ok then return true, "ok world.progress.hook.mark " .. tostring(detail) end
+            return false, "world.progress.hook.mark failed: " .. tostring(detail)
+        end
+        if line == "world.progress.hook.trigger" or line:sub(1, #"world.progress.hook.trigger ") == "world.progress.hook.trigger " then
+            local ok, detail = feature_progress.trigger_hook(arg_after("world.progress.hook.trigger"))
+            if ok then return true, "ok world.progress.hook.trigger " .. tostring(detail) end
+            return false, "world.progress.hook.trigger failed: " .. tostring(detail)
+        end
+        if line == "world.progress.hook.reset" or line:sub(1, #"world.progress.hook.reset ") == "world.progress.hook.reset " then
+            local ok, detail = feature_progress.reset_hook(arg_after("world.progress.hook.reset"))
+            if ok then return true, "ok world.progress.hook.reset " .. tostring(detail) end
+            return false, "world.progress.hook.reset failed: " .. tostring(detail)
+        end
+        if line == "world.resource.probe" or line:sub(1, #"world.resource.probe ") == "world.resource.probe " then
+            local ok, detail = feature_persistence.resource_probe(arg_after("world.resource.probe"))
+            if ok then return true, "ok world.resource.probe " .. tostring(detail) end
+            return false, "world.resource.probe failed: " .. tostring(detail)
+        end
+        if line == "world.resource.set" or line:sub(1, #"world.resource.set ") == "world.resource.set " then
+            local ok, detail = feature_persistence.resource_set(arg_after("world.resource.set"))
+            if ok then return true, "ok world.resource.set " .. tostring(detail) end
+            return false, "world.resource.set failed: " .. tostring(detail)
+        end
+        if line == "world.resource.pause" or line:sub(1, #"world.resource.pause ") == "world.resource.pause " then
+            local ok, detail = feature_persistence.resource_pause(arg_after("world.resource.pause"))
+            if ok then return true, "ok world.resource.pause " .. tostring(detail) end
+            return false, "world.resource.pause failed: " .. tostring(detail)
+        end
+        if line == "world.resource.take" or line:sub(1, #"world.resource.take ") == "world.resource.take " then
+            local ok, detail = feature_persistence.resource_take(arg_after("world.resource.take"))
+            if ok then return true, "ok world.resource.take " .. tostring(detail) end
+            return false, "world.resource.take failed: " .. tostring(detail)
+        end
+        if line == "world.chest.probe" or line:sub(1, #"world.chest.probe ") == "world.chest.probe " then
+            local ok, detail = feature_persistence.chest_probe(arg_after("world.chest.probe"))
+            if ok then return true, "ok world.chest.probe " .. tostring(detail) end
+            return false, "world.chest.probe failed: " .. tostring(detail)
+        end
+        if line == "world.chest.state" or line:sub(1, #"world.chest.state ") == "world.chest.state " then
+            local ok, detail = feature_persistence.chest_state(arg_after("world.chest.state"))
+            if ok then return true, "ok world.chest.state " .. tostring(detail) end
+            return false, "world.chest.state failed: " .. tostring(detail)
+        end
+        if line == "world.chest.respawn_disabled" or line:sub(1, #"world.chest.respawn_disabled ") == "world.chest.respawn_disabled " then
+            local ok, detail = feature_persistence.chest_respawn_disabled(arg_after("world.chest.respawn_disabled"))
+            if ok then return true, "ok world.chest.respawn_disabled " .. tostring(detail) end
+            return false, "world.chest.respawn_disabled failed: " .. tostring(detail)
+        end
+        if line == "world.spud.persist" or line:sub(1, 19) == "world.spud.persist " then
+            local ok, detail = feature_spud.persist(arg_after("world.spud.persist"))
+            if ok then return true, "ok world.spud.persist " .. tostring(detail) end
+            return false, "world.spud.persist failed: " .. tostring(detail)
+        end
+        if line == "world.spud.unpersist" or line:sub(1, 21) == "world.spud.unpersist " then
+            local ok, detail = feature_spud.unpersist(arg_after("world.spud.unpersist"))
+            if ok then return true, "ok world.spud.unpersist " .. tostring(detail) end
+            return false, "world.spud.unpersist failed: " .. tostring(detail)
         end
 
         -- Round 54: bulk per-class operations -- the "loop" primitive
@@ -1085,6 +1302,146 @@ function M._dispatch(line)
             local ok, detail = feature_foreach.findall(val)
             if ok then return true, "ok world.findall " .. tostring(detail) end
             return false, "world.findall failed: " .. tostring(detail)
+        end
+
+        -- world.cdo.dump.all
+        --   Bulk variant : dumps every UDeveloperSettings CDO into
+        --   ipc/cdo/<ClassName>.json, one file per class. Powers the
+        --   "snapshot every settings class at once" workflow so the C#
+        --   side can iterate the directory rather than re-dispatching
+        --   per class. Must be checked BEFORE the bare `world.cdo.dump`
+        --   prefix below since they share the first 14 characters.
+        if line == "world.cdo.dump.all" or line:sub(1, 19) == "world.cdo.dump.all " then
+            local ok, detail = feature_introspect.dump_cdo_all()
+            if ok then return true, "ok world.cdo.dump.all " .. tostring(detail) end
+            return false, "world.cdo.dump.all failed: " .. tostring(detail)
+        end
+
+        -- world.cdo.dump.deep <ClassName> [maxDepth=2]
+        --   Recursive dump : dumps the class, then for every soft path
+        --   / class ref / object path in its fields, follows and dumps
+        --   that too. Output goes to ipc/cdo/<Class>.json (per-class
+        --   files, NOT actor_info.json) and ipc/asset/<sanitised>.json.
+        --   A walk audit lands at ipc/cdo_deep_log.txt. Depth-limited
+        --   (default 2, hard cap 5) and cycle-protected. MUST be matched
+        --   before the bare `world.cdo.dump` prefix.
+        if line == "world.cdo.dump.deep" or line:sub(1, 20) == "world.cdo.dump.deep " then
+            local val = arg_after("world.cdo.dump.deep")
+            if val == "" then return false, "usage: world.cdo.dump.deep <ClassName> [maxDepth=2]" end
+            local ok, detail = feature_introspect.dump_cdo_deep(val)
+            if ok then return true, "ok world.cdo.dump.deep " .. tostring(detail) end
+            return false, "world.cdo.dump.deep failed: " .. tostring(detail)
+        end
+
+        -- world.cdo.dump <ClassName | /Script/Module.Class>
+        --   Reuses the actor-info reflection pipeline against the named
+        --   class's CDO and writes ipc/actor_info.json so the WPF Inspect
+        --   tab can browse settings classes (BuildingSettings, ItemSettings,
+        --   etc.) the same way it browses live actors. Path form is
+        --   preferred -- it mirrors the .ini section header
+        --   `[/Script/Module.Class]`. Short-name form falls back to
+        --   FindFirstOf, which works for any class with at least one
+        --   live instance (true for most UDeveloperSettings, where the
+        --   CDO _is_ the runtime instance).
+        if line:sub(1, 14) == "world.cdo.dump" then
+            local val = arg_after("world.cdo.dump")
+            if val == "" then return false, "usage: world.cdo.dump <ClassName|/Script/Module.Class>" end
+            local ok, detail = feature_introspect.dump_cdo(val)
+            if ok then return true, "ok world.cdo.dump " .. tostring(detail) end
+            return false, "world.cdo.dump failed: " .. tostring(detail)
+        end
+
+        -- world.asset.dump </Game/Path/To/Asset.Asset | SoftPath>
+        --   Force-loads a soft asset reference and dumps the resolved
+        --   UObject the same way world.cdo.dump dumps a class default.
+        --   Used to crack open soft refs harvested from CDO dumps
+        --   (GearPresets, BuildPieceCatalogueRef, etc.) without
+        --   exposing the live engine to in-place container/struct
+        --   walks (which have crashed in the past -- see comments
+        --   in feature_introspect.try_read_field).
+        --   Output : ipc/asset/<sanitized>.json.
+        if line:sub(1, 16) == "world.asset.dump" then
+            local val = arg_after("world.asset.dump")
+            if val == "" then return false, "usage: world.asset.dump </Game/...|SoftPath>" end
+            local ok, detail = feature_introspect.dump_asset(val)
+            if ok then return true, "ok world.asset.dump " .. tostring(detail) end
+            return false, "world.asset.dump failed: " .. tostring(detail)
+        end
+
+        -- world.func.call <Target> <Method> [args...]
+        --   Resolve a UObject and invoke a UFunction. Target accepts
+        --   short-name, full path, or shortcuts ("cheatmgr", "player").
+        --   Args are space-separated and lightly coerced (true/false,
+        --   numbers, otherwise string). Pcall-wrapped end-to-end so
+        --   typos don't crash the game thread.
+        if line:sub(1, 15) == "world.func.call" then
+            local val = arg_after("world.func.call")
+            if val == "" then return false, "usage: world.func.call <Target> <Method> [args...]" end
+            local ok, detail = feature_introspect.func_call(val)
+            if ok then return true, "ok world.func.call " .. tostring(detail) end
+            return false, "world.func.call failed: " .. tostring(detail)
+        end
+
+        -- world.cheat.exec <command [args...]>
+        --   Send the entire payload as one console command through the
+        --   local PlayerController. Goes through UE's exec dispatcher
+        --   so cheat-manager methods bind to the LIVE local pawn /
+        --   cheat manager, not whichever instance FindFirstOf returned.
+        --   Use this when world.func.call reports success but nothing
+        --   happens in-game.
+        if line == "world.cheat.exec" or line:sub(1, 17) == "world.cheat.exec " then
+            local val = arg_after("world.cheat.exec")
+            if val == "" then return false, "usage: world.cheat.exec <command [args...]>" end
+            local ok, detail = feature_introspect.cheat_exec(val)
+            if ok then return true, "ok world.cheat.exec " .. tostring(detail) end
+            return false, "world.cheat.exec failed: " .. tostring(detail)
+        end
+
+        -- world.diff.cdo.snap <ClassName>
+        -- world.diff.cdo.compare <ClassName>
+        --   Snapshot/compare a class's CDO field values to discover
+        --   what a cheat or runtime event mutated. The .compare verb
+        --   writes ipc/cdo_diff_<Class>.json. Snapshots live in
+        --   Lua-side memory only -- they're not persisted across
+        --   game restarts. Order matters : snap first, mutate, compare.
+        --
+        --   Longer prefix MUST be checked first (snap/compare share
+        --   the `world.diff.cdo` stem).
+        if line == "world.diff.cdo.snap" or line:sub(1, 20) == "world.diff.cdo.snap " then
+            local val = arg_after("world.diff.cdo.snap")
+            if val == "" then return false, "usage: world.diff.cdo.snap <ClassName>" end
+            local ok, detail = feature_introspect.diff_cdo_snap(val)
+            if ok then return true, "ok world.diff.cdo.snap " .. tostring(detail) end
+            return false, "world.diff.cdo.snap failed: " .. tostring(detail)
+        end
+        if line == "world.diff.cdo.compare" or line:sub(1, 23) == "world.diff.cdo.compare " then
+            local val = arg_after("world.diff.cdo.compare")
+            if val == "" then return false, "usage: world.diff.cdo.compare <ClassName>" end
+            local ok, detail = feature_introspect.diff_cdo_compare(val)
+            if ok then return true, "ok world.diff.cdo.compare " .. tostring(detail) end
+            return false, "world.diff.cdo.compare failed: " .. tostring(detail)
+        end
+
+        -- world.diff.actor.snap <ActorName | player | cheatmgr | /Path>
+        -- world.diff.actor.compare <same target>
+        --   Snapshot/compare a LIVE actor instance (not its CDO).
+        --   This is what cheats actually mutate -- domFullHeal touches
+        --   the live ASC / pawn, not the class default. Walks the
+        --   full class chain so inherited fields are caught too.
+        --   Output : ipc/actor_diff_<name>.json.
+        if line == "world.diff.actor.snap" or line:sub(1, 22) == "world.diff.actor.snap " then
+            local val = arg_after("world.diff.actor.snap")
+            if val == "" then return false, "usage: world.diff.actor.snap <ActorName|player|cheatmgr|/Path>" end
+            local ok, detail = feature_introspect.diff_actor_snap(val)
+            if ok then return true, "ok world.diff.actor.snap " .. tostring(detail) end
+            return false, "world.diff.actor.snap failed: " .. tostring(detail)
+        end
+        if line == "world.diff.actor.compare" or line:sub(1, 25) == "world.diff.actor.compare " then
+            local val = arg_after("world.diff.actor.compare")
+            if val == "" then return false, "usage: world.diff.actor.compare <same target as snap>" end
+            local ok, detail = feature_introspect.diff_actor_compare(val)
+            if ok then return true, "ok world.diff.actor.compare " .. tostring(detail) end
+            return false, "world.diff.actor.compare failed: " .. tostring(detail)
         end
 
         if line:sub(1, 13) == "world.foreach" then
@@ -1408,6 +1765,77 @@ function M._dispatch(line)
             return false, "world.summon failed: " .. tostring(detail)
         end
 
+        -- world.class.load : diagnostic/preload route for the reflected
+        -- Kismet soft-class path pipeline. If this succeeds, the class is
+        -- now in memory and world.spawn should be able to resolve it via
+        -- its normal StaticFindObject fast path.
+        if line:sub(1, 17) == "world.class.load " then
+            local ok, detail = feature_player.load_class(line:sub(18))
+            if ok then return true, "ok world.class.load " .. tostring(detail) end
+            return false, "world.class.load failed: " .. tostring(detail)
+        end
+
+        -- world.spawn.safe : convenience route for UI/favorites. Prefer the
+        -- transform-aware deferred spawn, but fall back to native console
+        -- summon for classes that still resist the spawn resolver.
+        if line:sub(1, 17) == "world.spawn.safe " then
+            local ok, detail = feature_player.spawn_safe(line:sub(18))
+            if ok then return true, "ok world.spawn.safe " .. tostring(detail) end
+            return false, "world.spawn.safe failed: " .. tostring(detail)
+        end
+
+        -- world.spawn : transform-aware counterpart to world.summon. Routes
+        -- through UGameplayStatics::BeginDeferredActorSpawnFromClass +
+        -- FinishSpawningActor so we get (a) aim-trace location instead of
+        -- PC origin, (b) a deferred init window for required UPROPERTYs.
+        -- Optional JSON tail :  world.spawn <ClassPath> {"ItemData":"/Game/.../IT_X.IT_X"}
+        if line:sub(1, 12) == "world.spawn " then
+            local ok, detail = feature_player.spawn(line:sub(13))
+            if ok then return true, "ok world.spawn " .. tostring(detail) end
+            return false, "world.spawn failed: " .. tostring(detail)
+        end
+
+        -- world.spawn.item : the WorldItemSubsystem-aware variant. Routes
+        -- through UItemHelperLibrary::SpawnAndLaunchItem_Sync, the same
+        -- function the game uses internally for every loot drop / craft
+        -- output. Result is a fully-wired pickup (collect grants the item,
+        -- magnet pull works, inventory queries see it). world.spawn alone
+        -- gets you a visible-but-broken pickup because it only constructs
+        -- the actor without enrolling it with the subsystem.
+        if line:sub(1, 17) == "world.spawn.item " then
+            local ok, detail = feature_player.spawn_item(line:sub(18))
+            if ok then return true, "ok world.spawn.item " .. tostring(detail) end
+            return false, "world.spawn.item failed: " .. tostring(detail)
+        end
+
+        -- world.bookmark <slot> -- stash the current `lastspawned` actor
+        -- under <slot> so it can be referenced later via the
+        -- `slot:<slot>` reach root. Solves the wiring problem when you
+        -- need to refer to actor A *after* spawning actor B (B becomes
+        -- the new lastspawned, A would otherwise be unreachable).
+        -- Bookmarks are session-only ; UObject pointers don't survive
+        -- save/reload, but they don't need to -- only the live
+        -- configure-then-save flow uses them.
+        if line:sub(1, 15) == "world.bookmark " then
+            local slot = line:sub(16):match("^%s*(%S+)%s*$")
+            if not slot then return false, "usage: world.bookmark <slot>" end
+            local ok, detail = feature_field.bookmark_last_spawned(slot)
+            if ok then return true, "ok world.bookmark " .. tostring(detail) end
+            return false, "world.bookmark failed: " .. tostring(detail)
+        end
+        if line:sub(1, 22) == "world.bookmark.forget " then
+            local slot = line:sub(23):match("^%s*(%S+)%s*$")
+            if not slot then return false, "usage: world.bookmark.forget <slot>" end
+            local ok, detail = feature_field.forget_bookmark(slot)
+            if ok then return true, "ok world.bookmark.forget " .. tostring(detail) end
+            return false, "world.bookmark.forget failed: " .. tostring(detail)
+        end
+        if line == "world.bookmark.list" then
+            local entries = feature_field.list_bookmarks()
+            if #entries == 0 then return true, "ok world.bookmark.list (empty)" end
+            return true, "ok world.bookmark.list " .. table.concat(entries, ",")
+        end
+
         -- world.net.roster : passive roster snapshot for the WPF Multi
         -- tab. Returns a single-line JSON array in the ack body so the
         -- viewer can parse without a follow-up file read.
@@ -1687,11 +2115,26 @@ function M._dispatch(line)
         return false, "unknown actor.* verb"
     end
 
-    -- ---- camera.grab.* + camera.lookat (top-level ; longest-prefix order) ----
+    -- ---- camera.debug.* + camera.grab.* + camera.lookat (top-level ; longest-prefix order) ----
     -- Must live OUTSIDE the actor.* block above ; the dispatcher gates that
     -- whole block on `line:sub(1,6) == "actor."`, so any camera.* line
     -- typed there would silently fall through. Keep these grouped here so
     -- the next refactor doesn't re-nest them by accident.
+    --   camera.debug.status         report stock DebugCamera controller state
+    --   camera.debug.enable         enable Unreal's stock DebugCamera
+    --   camera.debug.disable        disable Unreal's stock DebugCamera
+    --   camera.debug.toggle         toggle Unreal's stock DebugCamera
+    --   camera.debug.force_restore  explicit fallback if stock disable fails
+    --   camera.debug.speed <scale>  scale DebugCamera pawn movement speed
+    --   camera.debug.display        toggle DebugCamera overlay
+    --   camera.debug.selected       report DebugCamera selected actor
+    --   camera.streaming.status     report DebugCamera + World Partition streaming state
+    --   camera.streaming.scale <n> [range]  scale camera source shapes / WP grid range
+    --   camera.streaming.reset      restore runtime streaming experiment snapshot
+    --   camera.lod.status [radius] [limit]  count render components near camera
+    --   camera.lod.force <radius> [lod] [limit]  disabled after Shipping crash reports
+    --   camera.lod.reset            restore camera-local LOD experiment snapshot
+    --   camera.rig.*                first DebugCamera-backed pose/path verbs
     --   camera.grab.release         drop in place
     --   camera.grab.cancel          drop and restore start transform
     --   camera.grab.status          report state
@@ -1700,6 +2143,190 @@ function M._dispatch(line)
     --   camera.grab.rotate <signed> dedicated yaw nudge (mode-independent)
     --   camera.grab.start [name]    latch named (or look-at) actor
     --   camera.lookat               probe what the camera trace hits
+    if line == "camera.debug.status" then
+        local ok, detail = feature_camera.status()
+        if ok then return true, "ok camera.debug.status " .. tostring(detail) end
+        return false, "camera.debug.status failed: " .. tostring(detail)
+    end
+    if line == "camera.streaming.status" then
+        local ok, detail = feature_camera.streaming_status()
+        if ok then return true, "ok camera.streaming.status " .. tostring(detail) end
+        return false, "camera.streaming.status failed: " .. tostring(detail)
+    end
+    if line == "camera.streaming.scale" or line:sub(1, 23) == "camera.streaming.scale " then
+        local arg = line:sub(24):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.streaming_scale(arg)
+        if ok then return true, "ok camera.streaming.scale " .. tostring(detail) end
+        return false, "camera.streaming.scale failed: " .. tostring(detail)
+    end
+    if line == "camera.streaming.reset" then
+        local ok, detail = feature_camera.streaming_reset()
+        if ok then return true, "ok camera.streaming.reset " .. tostring(detail) end
+        return false, "camera.streaming.reset failed: " .. tostring(detail)
+    end
+    if line == "camera.lod.status" or line:sub(1, 18) == "camera.lod.status " then
+        local arg = line:sub(19):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.lod_status(arg)
+        if ok then return true, "ok camera.lod.status " .. tostring(detail) end
+        return false, "camera.lod.status failed: " .. tostring(detail)
+    end
+    if line == "camera.lod.force" or line:sub(1, 17) == "camera.lod.force " then
+        local arg = line:sub(18):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.lod_force(arg)
+        if ok then return true, "ok camera.lod.force " .. tostring(detail) end
+        return false, "camera.lod.force failed: " .. tostring(detail)
+    end
+    if line == "camera.lod.reset" then
+        local ok, detail = feature_camera.lod_reset()
+        if ok then return true, "ok camera.lod.reset " .. tostring(detail) end
+        return false, "camera.lod.reset failed: " .. tostring(detail)
+    end
+    if line == "camera.rig.status" then
+        local ok, detail = feature_camera.rig_status()
+        if ok then return true, "ok camera.rig.status " .. tostring(detail) end
+        return false, "camera.rig.status failed: " .. tostring(detail)
+    end
+    if line == "camera.rig.start" or line:sub(1, 17) == "camera.rig.start " then
+        local arg = line:sub(18):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.rig_start(arg)
+        if ok then return true, "ok camera.rig.start " .. tostring(detail) end
+        return false, "camera.rig.start failed: " .. tostring(detail)
+    end
+    if line == "camera.rig.stop" then
+        local ok, detail = feature_camera.rig_stop()
+        if ok then return true, "ok camera.rig.stop " .. tostring(detail) end
+        return false, "camera.rig.stop failed: " .. tostring(detail)
+    end
+    if line == "camera.rig.list" then
+        local ok, detail = feature_camera.rig_list()
+        if ok then return true, "ok camera.rig.list " .. tostring(detail) end
+        return false, "camera.rig.list failed: " .. tostring(detail)
+    end
+    if line == "camera.rig.clear" then
+        local ok, detail = feature_camera.rig_clear()
+        if ok then return true, "ok camera.rig.clear " .. tostring(detail) end
+        return false, "camera.rig.clear failed: " .. tostring(detail)
+    end
+    if line:sub(1, 19) == "camera.rig.pose.set" then
+        local arg = line:sub(20):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.rig_pose_set(arg)
+        if ok then return true, "ok camera.rig.pose.set " .. tostring(detail) end
+        return false, "camera.rig.pose.set failed: " .. tostring(detail)
+    end
+    if line == "camera.rig.poses.file" or line:sub(1, 22) == "camera.rig.poses.file " then
+        local arg = line:sub(23):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.rig_poses_file(arg)
+        if ok then return true, "ok camera.rig.poses.file " .. tostring(detail) end
+        return false, "camera.rig.poses.file failed: " .. tostring(detail)
+    end
+    if line:sub(1, 17) == "camera.rig.delete" then
+        local arg = line:sub(18):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.rig_delete(arg)
+        if ok then return true, "ok camera.rig.delete " .. tostring(detail) end
+        return false, "camera.rig.delete failed: " .. tostring(detail)
+    end
+    if line:sub(1, 18) == "camera.rig.capture" then
+        local arg = line:sub(19):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.rig_capture(arg)
+        if ok then return true, "ok camera.rig.capture " .. tostring(detail) end
+        return false, "camera.rig.capture failed: " .. tostring(detail)
+    end
+    if line == "camera.rig.goto.file" or line:sub(1, 21) == "camera.rig.goto.file " then
+        local arg = line:sub(22):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.rig_goto_file(arg)
+        if ok then return true, "ok camera.rig.goto.file " .. tostring(detail) end
+        return false, "camera.rig.goto.file failed: " .. tostring(detail)
+    end
+    if line:sub(1, 15) == "camera.rig.goto" then
+        local arg = line:sub(16):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.rig_goto(arg)
+        if ok then return true, "ok camera.rig.goto " .. tostring(detail) end
+        return false, "camera.rig.goto failed: " .. tostring(detail)
+    end
+    if line == "camera.rig.play.stop" then
+        local ok, detail = feature_camera.rig_play_stop()
+        if ok then return true, "ok camera.rig.play.stop " .. tostring(detail) end
+        return false, "camera.rig.play.stop failed: " .. tostring(detail)
+    end
+    if line == "camera.rig.play.file" or line:sub(1, 21) == "camera.rig.play.file " then
+        local arg = line:sub(22):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.rig_play_file(arg)
+        if ok then return true, "ok camera.rig.play.file " .. tostring(detail) end
+        return false, "camera.rig.play.file failed: " .. tostring(detail)
+    end
+    if line == "camera.rig.play.chain" or line:sub(1, 22) == "camera.rig.play.chain " then
+        local arg = line:sub(23):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.rig_play_chain(arg)
+        if ok then return true, "ok camera.rig.play.chain " .. tostring(detail) end
+        return false, "camera.rig.play.chain failed: " .. tostring(detail)
+    end
+    if line:sub(1, 15) == "camera.rig.play" then
+        local arg = line:sub(16):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.rig_play(arg)
+        if ok then return true, "ok camera.rig.play " .. tostring(detail) end
+        return false, "camera.rig.play failed: " .. tostring(detail)
+    end
+    if line:sub(1, 14) == "camera.rig.fov" then
+        local arg = line:sub(15):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.rig_fov(arg)
+        if ok then return true, "ok camera.rig.fov " .. tostring(detail) end
+        return false, "camera.rig.fov failed: " .. tostring(detail)
+    end
+    if line == "camera.fps" or line:sub(1, 11) == "camera.fps " then
+        local arg = line:sub(12):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.fps(arg)
+        if ok then return true, "ok camera.fps " .. tostring(detail) end
+        return false, "camera.fps failed: " .. tostring(detail)
+    end
+    if line == "camera.vsync" or line:sub(1, 13) == "camera.vsync " then
+        local arg = line:sub(14):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.vsync(arg)
+        if ok then return true, "ok camera.vsync " .. tostring(detail) end
+        return false, "camera.vsync failed: " .. tostring(detail)
+    end
+    if line == "camera.rig.lookat" or line:sub(1, 18) == "camera.rig.lookat " then
+        local arg = line:sub(19):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_camera.rig_lookat(arg)
+        if ok then return true, "ok camera.rig.lookat " .. tostring(detail) end
+        return false, "camera.rig.lookat failed: " .. tostring(detail)
+    end
+    if line == "camera.debug.enable" then
+        local ok, detail = feature_camera.enable()
+        if ok then return true, "ok camera.debug.enable " .. tostring(detail) end
+        return false, "camera.debug.enable failed: " .. tostring(detail)
+    end
+    if line == "camera.debug.disable" then
+        local ok, detail = feature_camera.disable()
+        if ok then return true, "ok camera.debug.disable " .. tostring(detail) end
+        return false, "camera.debug.disable failed: " .. tostring(detail)
+    end
+    if line == "camera.debug.toggle" then
+        local ok, detail = feature_camera.toggle()
+        if ok then return true, "ok camera.debug.toggle " .. tostring(detail) end
+        return false, "camera.debug.toggle failed: " .. tostring(detail)
+    end
+    if line == "camera.debug.force_restore" then
+        local ok, detail = feature_camera.force_restore()
+        if ok then return true, "ok camera.debug.force_restore " .. tostring(detail) end
+        return false, "camera.debug.force_restore failed: " .. tostring(detail)
+    end
+    if line == "camera.debug.display" then
+        local ok, detail = feature_camera.display()
+        if ok then return true, "ok camera.debug.display " .. tostring(detail) end
+        return false, "camera.debug.display failed: " .. tostring(detail)
+    end
+    if line == "camera.debug.selected" then
+        local ok, detail = feature_camera.selected()
+        if ok then return true, "ok camera.debug.selected " .. tostring(detail) end
+        return false, "camera.debug.selected failed: " .. tostring(detail)
+    end
+    if line == "camera.debug.speed" or line:sub(1, 19) == "camera.debug.speed " then
+        local arg = line:sub(20):match("^%s*(.-)%s*$") or ""
+        if arg == "" then return false, "usage: camera.debug.speed <scale>" end
+        local ok, detail = feature_camera.speed(arg)
+        if ok then return true, "ok camera.debug.speed " .. tostring(detail) end
+        return false, "camera.debug.speed failed: " .. tostring(detail)
+    end
     if line:sub(1, 19) == "camera.grab.release" then
         local ok, detail = feature_grab.release()
         if ok then return true, "ok camera.grab.release " .. tostring(detail) end
@@ -1746,6 +2373,11 @@ function M._dispatch(line)
         local ok, detail = feature_grab.toggle(arg ~= "" and arg or nil)
         if ok then return true, "ok camera.grab.toggle " .. tostring(detail) end
         return false, "camera.grab.toggle failed: " .. tostring(detail)
+    end
+    if line == "camera.grab.lastspawned" then
+        local ok, detail = feature_grab.start_lastspawned()
+        if ok then return true, "ok camera.grab.lastspawned " .. tostring(detail) end
+        return false, "camera.grab.lastspawned failed: " .. tostring(detail)
     end
     if line:sub(1, 17) == "camera.grab.start" then
         local arg = line:sub(18):match("^%s*(.-)%s*$") or ""

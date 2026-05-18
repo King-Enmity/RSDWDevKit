@@ -468,8 +468,17 @@ end
 -- per-grab offsets, then push it onto the actor. Returns false on a
 -- terminal failure (auto-release on next tick).
 local function tick_grab()
-    if not grab then return false end
-    local actor = grab.actor
+    -- Snapshot the upvalue to a local. M.release()/M.cancel() can null
+    -- `grab` between the get_camera_viewpoint() call (which marshals
+    -- through ExecuteInGameThread) and the subsequent field writes.
+    -- Observed in user log 2026-05-15: line "grab.dest.X = ..." crashed
+    -- with "attempt to index a nil value (upvalue 'grab')". The local
+    -- snapshot keeps this tick consistent even if the upvalue clears
+    -- mid-flight ; the loop callback in start_loop() will see the nil
+    -- on the next iteration and exit cleanly.
+    local g = grab
+    if not g then return false end
+    local actor = g.actor
     if not feature_actor.is_valid_object(actor) then
         print("[RSDWTools] grab: target invalid, releasing.")
         return false
@@ -480,27 +489,29 @@ local function tick_grab()
         -- transiently disappear during view target swaps. Just skip.
         return true
     end
+    -- Re-check after the cross-thread call.
+    if not grab or grab ~= g then return false end
 
     -- Full 3D forward so pitching the camera moves the held actor up
     -- and down along the sight line (oculus feel). z_offset is an
     -- additional vertical nudge applied on top, driven by `z` mode.
     local fx, fy, fz = camera_forward_3d(cam_rot)
-    grab.dest.X = (cam_loc.X or 0) + fx * grab.distance
-    grab.dest.Y = (cam_loc.Y or 0) + fy * grab.distance
-    grab.dest.Z = (cam_loc.Z or 0) + fz * grab.distance + grab.z_offset
+    g.dest.X = (cam_loc.X or 0) + fx * g.distance
+    g.dest.Y = (cam_loc.Y or 0) + fy * g.distance
+    g.dest.Z = (cam_loc.Z or 0) + fz * g.distance + g.z_offset
 
-    grab.rot.Pitch = 0
-    grab.rot.Yaw = (cam_rot and cam_rot.Yaw or 0) + grab.yaw_offset
-    grab.rot.Roll = 0
+    g.rot.Pitch = 0
+    g.rot.Yaw = (cam_rot and cam_rot.Yaw or 0) + g.yaw_offset
+    g.rot.Roll = 0
 
-    local moved = feature_actor.move_actor(actor, grab.dest)
+    local moved = feature_actor.move_actor(actor, g.dest)
     if moved == false then
         -- One failed write isn't fatal -- the engine occasionally
         -- rejects a sweep when the destination collides. Keep going ;
         -- next tick the camera has moved a bit and may succeed.
         return true
     end
-    feature_actor.set_actor_rotation(actor, grab.rot)
+    feature_actor.set_actor_rotation(actor, g.rot)
     return true
 end
 
@@ -585,45 +596,11 @@ end
 -- Without <name>: ask the game's interaction detector first, then fall
 -- back to a forward line trace. The local pawn and the oculus pawn
 -- are always excluded from the trace so we never grab ourselves.
-function M.start(name)
-    if grab then
-        return false, "already grabbing " .. tostring(grab.name) .. " ; release first"
-    end
-    -- Round 62: require oculus freecam to be active before allowing
-    -- a grab to start. The grab pipeline anchors the actor to the
-    -- camera viewpoint each tick ; outside oculus mode that viewpoint
-    -- is the player char's own camera, which means the grabbed actor
-    -- floats in front of the player and rides their head movement.
-    -- Forcing oculus-only avoids that footgun and keeps grab semantics
-    -- aligned with the freecam workflow it was designed for.
-    if not _oculus_is_active() then
-        return false, "camera.grab.start requires oculus freecam to be active"
-    end
-
-    local actor, picked_name
-    if name and name ~= "" then
-        actor = feature_actor.resolve_actor_by_name(name)
-        if not actor then return false, "actor not found: " .. tostring(name) end
-        picked_name = name
-    else
-        -- Prefer the game's interaction detector when the player char
-        -- is in control ; in oculus mode the detector is irrelevant
-        -- (it's tied to the hidden player char), so trace directly.
-        local picked = nil
-        if not _oculus_is_active() then
-            picked = _detector_pick()
-        end
-        if not picked then
-            local hit_actor, _impact, terr = _trace_from_camera(LOOKAT_MAX_DISTANCE)
-            if not hit_actor then
-                return false, "lookat: " .. tostring(terr)
-            end
-            picked = hit_actor
-        end
-        actor = picked
-        picked_name = feature_actor.short_name_of(actor) or "<unnamed>"
-    end
-
+-- Internal : begin a grab session given a fully-resolved (actor, name)
+-- pair. All public M.start* entries funnel through here so the static-
+-- class block, transform seeding and grab-state allocation only live
+-- in one place. Returns the same (ok, detail) tuple as M.start.
+local function _begin_grab(actor, picked_name)
     -- Round 62: forbid grabbing world-static / foliage actors. Both
     -- categories are treated by the engine as immovable instances ;
     -- moving them tends to crash because their collision and nav
@@ -703,6 +680,78 @@ function M.start(name)
     start_loop()
     _toast("Grabbed: " .. _label_for(actor), 1.5)
     return true, string.format("grabbed %s @ dist=%.0f z=%.0f", picked_name, horiz, z_residual)
+end
+
+-- camera.grab.start [<name>]
+--
+-- With <name>: resolve via feature_actor by exact short name (same path
+-- used by every other actor.* verb).
+-- Without <name>: ask the game's interaction detector first, then fall
+-- back to a forward line trace. The local pawn and the oculus pawn
+-- are always excluded from the trace so we never grab ourselves.
+function M.start(name)
+    if grab then
+        return false, "already grabbing " .. tostring(grab.name) .. " ; release first"
+    end
+    -- Round 62: require oculus freecam to be active before allowing
+    -- a grab to start. The grab pipeline anchors the actor to the
+    -- camera viewpoint each tick ; outside oculus mode that viewpoint
+    -- is the player char's own camera, which means the grabbed actor
+    -- floats in front of the player and rides their head movement.
+    -- Forcing oculus-only avoids that footgun and keeps grab semantics
+    -- aligned with the freecam workflow it was designed for.
+    if not _oculus_is_active() then
+        return false, "camera.grab.start requires oculus freecam to be active"
+    end
+
+    local actor, picked_name
+    if name and name ~= "" then
+        actor = feature_actor.resolve_actor_by_name(name)
+        if not actor then return false, "actor not found: " .. tostring(name) end
+        picked_name = name
+    else
+        -- Prefer the game's interaction detector when the player char
+        -- is in control ; in oculus mode the detector is irrelevant
+        -- (it's tied to the hidden player char), so trace directly.
+        local picked = nil
+        if not _oculus_is_active() then
+            picked = _detector_pick()
+        end
+        if not picked then
+            local hit_actor, _impact, terr = _trace_from_camera(LOOKAT_MAX_DISTANCE)
+            if not hit_actor then
+                return false, "lookat: " .. tostring(terr)
+            end
+            picked = hit_actor
+        end
+        actor = picked
+        picked_name = feature_actor.short_name_of(actor) or "<unnamed>"
+    end
+
+    return _begin_grab(actor, picked_name)
+end
+
+-- camera.grab.lastspawned
+--
+-- Grab whichever actor world.spawn / world.spawn.item most recently
+-- produced. Resolves through the `lastspawned` reach root in
+-- feature_field, so it auto-clears if the actor has been destroyed
+-- since the spawn. Same oculus-required guard as M.start ; the
+-- intended workflow is "fly around in oculus, spawn at reticle, then
+-- nudge the new actor into precise position before releasing".
+function M.start_lastspawned()
+    if grab then
+        return false, "already grabbing " .. tostring(grab.name) .. " ; release first"
+    end
+    if not _oculus_is_active() then
+        return false, "camera.grab.lastspawned requires oculus freecam to be active"
+    end
+    local actor, rerr = feature_field.resolve_root("lastspawned")
+    if not actor then
+        return false, "no lastspawned actor (or it has been destroyed): " .. tostring(rerr)
+    end
+    local picked_name = feature_actor.short_name_of(actor) or "lastspawned"
+    return _begin_grab(actor, picked_name)
 end
 
 -- camera.lookat -- pure read-only "what's the camera pointed at?".

@@ -29,7 +29,7 @@
       "author": "Hi im Tat"
     },
     {
-      "name": "No Fog",
+      "name": "Remove All Fog from Map",
       "mods": [
         {
           "name": "Remove Fog",
@@ -60,6 +60,26 @@
     {
       "name": "Movement Kit",
       "folders": [
+        {
+          "name": "StartUp",
+          "mods": [
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Movement Kit: Active",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "value_off": "Movement Kit: Disabled",
+              "umg_duration": "3",
+              "umg_off_duration": "3"
+            }
+          ],
+          "hotkey_mode": "toggle",
+          "color": "#E0C04F"
+        },
         {
           "name": "Fly Mode",
           "mods": [
@@ -241,7 +261,9 @@
       "modifiers": [
         "LEFT_ALT"
       ],
+      "startup_folder": "StartUp",
       "author": "Hi im Tat",
+      "show_apply_all": false,
       "color": "#7B5FE0",
       "sub_kits": []
     }

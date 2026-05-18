@@ -1,0 +1,20 @@
+{
+  "name": "Looter Paradise 3",
+  "description": "A building used to store items in the game.",
+  "authors": [
+    "Mixolution"
+  ],
+  "tags": [
+    "build",
+    "looter",
+    "paradise",
+    "by-mixolution"
+  ],
+  "image": "looter_paradise_3.webp",
+  "images": [
+    "looter_paradise_3.webp",
+    "looter_paradise_3_2.webp"
+  ],
+  "download": "Looter_Paradise_3.json",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/201"
+}

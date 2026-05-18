@@ -258,4 +258,154 @@ function M.find_class(args_str)
     end)
 end
 
+-- ---------- widget spawning --------------------------------------------
+--
+-- probe.widget.spawn <objectPath> [zorder]
+-- probe.widget.remove [tag]
+-- probe.widget.list
+--
+-- Construct a UserWidget from a /Game/... blueprint class and push it
+-- to the player's viewport. Used to test whether dev menus and other
+-- UI assets the catalog surfaces (e.g. WBP_DebugMenu_AIPage) actually
+-- render in shipping builds when their normal cheat-gated input path
+-- has been #if'd out. We don't bind keys ; we just construct the
+-- widget directly and add it to the viewport so any visible content
+-- becomes immediately clickable.
+--
+-- Spawned widgets are tracked by tag so probe.widget.remove can take
+-- them back down. The tag defaults to the asset leaf name ; pass an
+-- explicit tag (third whitespace-separated token) to keep multiple
+-- copies straight. probe.widget.list reports current tags.
+
+local _spawned_widgets = {}  -- tag -> {widget = <userdata>, path = string}
+
+local function _resolve_widget_class(path)
+    if not StaticFindObject then return nil, "StaticFindObject unavailable" end
+    local cls
+    local ok, found = pcall(StaticFindObject, path)
+    if ok and found and safety.is_uobject(found) then cls = found end
+    if not cls and LoadAsset then
+        local pkg = path:match("^(.-)%.[^.]+$") or path
+        pcall(LoadAsset, pkg)
+        local ok2, found2 = pcall(StaticFindObject, path)
+        if ok2 and found2 and safety.is_uobject(found2) then cls = found2 end
+    end
+    if not cls then
+        return nil, "class not found (need the full /Game/...Widget.Widget_C path)"
+    end
+    return cls
+end
+
+local function _resolve_player_controller()
+    local UEHelpers
+    do
+        local ok, mod = pcall(require, "UEHelpers")
+        if ok and type(mod) == "table" then UEHelpers = mod end
+    end
+    if UEHelpers and UEHelpers.GetPlayerController then
+        local ok, pc = pcall(UEHelpers.GetPlayerController)
+        if ok and pc and safety.is_uobject(pc) then return pc end
+    end
+    if UEHelpers and UEHelpers.GetGameInstance then
+        local ok, gi = pcall(UEHelpers.GetGameInstance)
+        if ok and gi then return gi end
+    end
+    return nil, "no PlayerController / GameInstance owner available"
+end
+
+function M.widget_spawn(args_str)
+    local s = trim(args_str)
+    if s == "" then
+        return false, "usage: probe.widget.spawn <objectPath> [zorder] [tag]"
+    end
+    -- Parse up to 3 whitespace-separated tokens : path, zorder, tag.
+    local path, rest = s:match("^(%S+)%s*(.*)$")
+    if not path or path == "" then
+        return false, "usage: probe.widget.spawn <objectPath> [zorder] [tag]"
+    end
+    local z_str, tag = rest:match("^(%S+)%s*(.*)$")
+    local zorder = tonumber(z_str) or 100
+    if not tag or tag == "" then
+        -- Default tag = asset leaf, lowercased for case-insensitive
+        -- match against the remove verb. Falls back to the full path
+        -- when the leaf can't be extracted.
+        tag = (path:match("([^/]+)$") or path):lower()
+        tag = tag:gsub("%..*", "")  -- strip trailing .ClassName_C
+    end
+    return with_sentinel("probe.widget.spawn", s, function()
+        local cls, cls_err = _resolve_widget_class(path)
+        if not cls then return false, cls_err end
+        local owner, owner_err = _resolve_player_controller()
+        if not owner then return false, owner_err end
+        -- Prefer UWidgetBlueprintLibrary.Create when available -- it
+        -- handles owning-player wiring correctly. Fall back to a
+        -- direct StaticConstructObject for builds where the helper
+        -- isn't exposed.
+        local widget
+        local wbl = StaticFindObject and StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
+        if wbl then
+            local ok_c, w = pcall(function() return wbl:Create(owner, cls, owner) end)
+            if ok_c and w and safety.is_uobject(w) then widget = w end
+        end
+        if not widget then
+            local ok_ctor, w2 = pcall(function()
+                return StaticConstructObject(cls, owner, FName("RSDWToolsWidget_" .. tag))
+            end)
+            if ok_ctor and w2 and safety.is_uobject(w2) then widget = w2 end
+        end
+        if not widget then
+            return false, "construction failed (class resolved but no widget returned)"
+        end
+        local ok_av = pcall(function() widget:AddToViewport(zorder) end)
+        if not ok_av then
+            return false, "AddToViewport raised (widget constructed but not shown)"
+        end
+        _spawned_widgets[tag] = { widget = widget, path = path, zorder = zorder }
+        return true, string.format("spawned tag=%s z=%d cls=%s",
+            tag, zorder, safety.class_name_of(widget) or "?")
+    end)
+end
+
+function M.widget_remove(args_str)
+    local tag = trim(args_str)
+    if tag == "" then
+        -- No tag : remove everything we spawned. Returns the count.
+        local removed = 0
+        for t, entry in pairs(_spawned_widgets) do
+            if entry.widget and safety.is_uobject(entry.widget) then
+                pcall(function() entry.widget:RemoveFromParent() end)
+            end
+            _spawned_widgets[t] = nil
+            removed = removed + 1
+        end
+        return true, string.format("removed %d widget(s)", removed)
+    end
+    tag = tag:lower()
+    local entry = _spawned_widgets[tag]
+    if not entry then
+        return false, "no spawned widget with tag '" .. tag .. "'"
+    end
+    if entry.widget and safety.is_uobject(entry.widget) then
+        local ok_rm = pcall(function() entry.widget:RemoveFromParent() end)
+        if not ok_rm then
+            _spawned_widgets[tag] = nil
+            return false, "RemoveFromParent raised (entry cleared anyway)"
+        end
+    end
+    _spawned_widgets[tag] = nil
+    return true, "removed tag=" .. tag
+end
+
+function M.widget_list(_args_str)
+    local n = 0
+    local parts = {}
+    for tag, entry in pairs(_spawned_widgets) do
+        n = n + 1
+        local alive = entry.widget and safety.is_uobject(entry.widget) and "live" or "dead"
+        parts[#parts + 1] = string.format("%s=%s(%s)", tag, alive, entry.path)
+    end
+    if n == 0 then return true, "no spawned widgets" end
+    return true, string.format("%d spawned : %s", n, table.concat(parts, ", "))
+end
+
 return M

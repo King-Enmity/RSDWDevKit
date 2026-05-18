@@ -1,0 +1,20 @@
+{
+  "name": "Lumbridge Farm",
+  "description": "Lumbridge Farm from Inevitance's Lumbridge Lite.",
+  "authors": [
+    "Inevitance"
+  ],
+  "tags": [
+    "prefab",
+    "lumbridge",
+    "farm",
+    "by-inevitance"
+  ],
+  "image": "Lumbridge_Farm.webp",
+  "images": [
+    "Lumbridge_Farm.webp",
+    "lumbridge_farm_2.jpg"
+  ],
+  "download": "Lumbridge_Farm.json",
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/236"
+}
