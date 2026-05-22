@@ -2265,11 +2265,12 @@ local function apply_field_writes(actor, fields)
     return warnings
 end
 
--- Tiny flat-object JSON parser. Supports exactly what the world.spawn
--- field-write contract needs : a top-level object whose values are
--- string / number / boolean / null. No nested objects, no arrays, no
--- escape-heavy strings (just \" and \\). Hand-rolled so the mod has zero
--- third-party Lua dependencies (dkjson isn't shipped in this UE4SS build).
+-- Tiny object JSON parser. Supports exactly what the spawn verbs need : a
+-- top-level object whose values are string / number / boolean / null, plus
+-- arrays of those primitives for world.spawn.transform's loc/rot/scale.
+-- No nested objects and no escape-heavy strings (just \" and \\). Hand-rolled
+-- so the mod has zero third-party Lua dependencies (dkjson isn't shipped in
+-- this UE4SS build).
 -- Returns ( table, nil ) on success or ( nil, errstring ) on failure.
 local function _parse_flat_json_object(src)
     local i, n = 1, #src
@@ -2311,10 +2312,29 @@ local function _parse_flat_json_object(src)
         end
         return nil, "unterminated string"
     end
-    local function parse_value()
+    local parse_value
+    local function parse_array()
+        if src:sub(i, i) ~= "[" then return nil, "array must start with [" end
+        i = i + 1
+        local out = {}
+        skip_ws()
+        if src:sub(i, i) == "]" then i = i + 1; return out end
+        while true do
+            local val, verr = parse_value()
+            if val == nil and verr then return nil, verr end
+            out[#out + 1] = val
+            skip_ws()
+            local sep = src:sub(i, i)
+            if sep == "," then i = i + 1
+            elseif sep == "]" then i = i + 1; return out
+            else return nil, "expected , or ] after array value, got " .. sep end
+        end
+    end
+    parse_value = function()
         skip_ws()
         local c = src:sub(i, i)
         if c == '"' then return parse_string() end
+        if c == "[" then return parse_array() end
         if c == "t" and src:sub(i, i + 3) == "true"  then i = i + 4; return true end
         if c == "f" and src:sub(i, i + 4) == "false" then i = i + 5; return false end
         if c == "n" and src:sub(i, i + 3) == "null"  then i = i + 4; return nil end
@@ -2352,17 +2372,7 @@ local function _parse_flat_json_object(src)
     end
 end
 
--- world.spawn implementation.
-function M.spawn(value_str)
-    local s = value_str and value_str:match("^%s*(.-)%s*$") or ""
-    if s == "" then
-        return false, "usage: world.spawn <ClassPath> [{json fields}]"
-    end
-
-    -- Split off optional JSON tail. JSON starts at the first '{' that
-    -- follows whitespace : that lets class paths with no spaces but
-    -- no JSON parse cleanly, and JSON-bearing forms split on the brace
-    -- regardless of how many spaces preceded it.
+local function split_class_and_json_tail(s)
     local class_path, json_tail
     local brace_at = s:find("%s+{")
     if brace_at then
@@ -2372,15 +2382,132 @@ function M.spawn(value_str)
         class_path = s
         json_tail  = nil
     end
+    return class_path, json_tail
+end
 
-    if class_path == "" then return false, "empty class path" end
-
-    local fields = nil
-    if json_tail and json_tail ~= "" then
-        local parsed, perr = _parse_flat_json_object(json_tail)
-        if not parsed then return false, "JSON parse failed: " .. tostring(perr) end
-        fields = parsed
+local function contains_array_value(fields)
+    if type(fields) ~= "table" then return false end
+    for _, value in pairs(fields) do
+        if type(value) == "table" then return true end
     end
+    return false
+end
+
+local function get_ci_field(tbl, names)
+    if type(tbl) ~= "table" then return nil end
+    for key, value in pairs(tbl) do
+        local lower_key = tostring(key):lower()
+        for _, name in ipairs(names) do
+            if lower_key == name then return value end
+        end
+    end
+    return nil
+end
+
+local function is_transform_json_key(key)
+    local k = tostring(key):lower()
+    return k == "loc" or k == "location"
+        or k == "rot" or k == "rotation"
+        or k == "scale"
+end
+
+local function vector3_from_array(value, field_name)
+    if type(value) ~= "table" then
+        return nil, field_name .. " must be [x,y,z]"
+    end
+    local x, y, z = tonumber(value[1]), tonumber(value[2]), tonumber(value[3])
+    if x == nil or y == nil or z == nil then
+        return nil, field_name .. " must contain three numbers"
+    end
+    return { X = x, Y = y, Z = z }, nil
+end
+
+local function scale3_from_value(value)
+    if value == nil then return { X = 1, Y = 1, Z = 1 }, nil end
+    if type(value) == "number" then return { X = value, Y = value, Z = value }, nil end
+    return vector3_from_array(value, "scale")
+end
+
+local function parse_explicit_spawn_transform(parsed)
+    local loc_value = get_ci_field(parsed, { "loc", "location" })
+    if loc_value == nil then
+        return nil, nil, "JSON requires loc:[x,y,z]"
+    end
+
+    local loc, loc_err = vector3_from_array(loc_value, "loc")
+    if not loc then return nil, nil, loc_err end
+
+    local rot = { Pitch = 0, Yaw = 0, Roll = 0 }
+    local rot_value = get_ci_field(parsed, { "rot", "rotation" })
+    if rot_value ~= nil then
+        local rot_vec, rot_err = vector3_from_array(rot_value, "rot")
+        if not rot_vec then return nil, nil, rot_err end
+        rot = { Pitch = rot_vec.X, Yaw = rot_vec.Y, Roll = rot_vec.Z }
+    end
+
+    local scale_value = get_ci_field(parsed, { "scale" })
+    local scale, scale_err = scale3_from_value(scale_value)
+    if not scale then return nil, nil, scale_err end
+
+    local fields = {}
+    for key, value in pairs(parsed) do
+        if not is_transform_json_key(key) then
+            if type(value) == "table" then
+                return nil, nil, "field " .. tostring(key) .. " uses an array; only loc/rot/scale accept arrays"
+            end
+            fields[key] = value
+        end
+    end
+    if next(fields) == nil then fields = nil end
+
+    return { loc = loc, rot = rot, scale = scale }, fields, nil
+end
+
+local function rotator_to_quat(rot)
+    rot = rot or {}
+    local pitch = (tonumber(rot.Pitch or rot.X) or 0) * math.pi / 360.0
+    local yaw   = (tonumber(rot.Yaw   or rot.Y) or 0) * math.pi / 360.0
+    local roll  = (tonumber(rot.Roll  or rot.Z) or 0) * math.pi / 360.0
+
+    local sp, cp = math.sin(pitch), math.cos(pitch)
+    local sy, cy = math.sin(yaw),   math.cos(yaw)
+    local sr, cr = math.sin(roll),  math.cos(roll)
+
+    return {
+        X = cr * sp * sy - sr * cp * cy,
+        Y = -cr * sp * cy - sr * cp * sy,
+        Z = cr * cp * sy - sr * sp * cy,
+        W = cr * cp * cy + sr * sp * sy,
+    }
+end
+
+local function build_spawn_xform(xform)
+    local loc = xform.loc
+    local scale = xform.scale or { X = 1, Y = 1, Z = 1 }
+    return {
+        Rotation    = rotator_to_quat(xform.rot),
+        Translation = { X = loc.X, Y = loc.Y, Z = loc.Z },
+        Scale3D     = { X = scale.X or 1, Y = scale.Y or 1, Z = scale.Z or 1 },
+    }
+end
+
+local function spawn_detail(class_path, xform, include_full_transform)
+    local loc = xform.loc
+    if not include_full_transform then
+        return string.format("%s @ (%.1f,%.1f,%.1f)", class_path, loc.X, loc.Y, loc.Z)
+    end
+
+    local rot = xform.rot or { Pitch = 0, Yaw = 0, Roll = 0 }
+    local scale = xform.scale or { X = 1, Y = 1, Z = 1 }
+    return string.format("%s @ loc(%.1f,%.1f,%.1f) rot(%.1f,%.1f,%.1f) scale(%.3g,%.3g,%.3g)",
+        class_path,
+        loc.X, loc.Y, loc.Z,
+        rot.Pitch or 0, rot.Yaw or 0, rot.Roll or 0,
+        scale.X or 1, scale.Y or 1, scale.Z or 1)
+end
+
+local function spawn_actor_deferred(class_path, fields, xform, log_verb, include_full_transform)
+    if class_path == "" then return false, "empty class path" end
 
     local uclass = resolve_uclass(class_path)
     if not uclass then return false, "could not resolve class : " .. class_path end
@@ -2392,30 +2519,8 @@ function M.spawn(value_str)
     local gpl = get_gameplay_statics()
     if not gpl then return false, "GameplayStatics CDO not found" end
 
-    local xform, err = compute_spawn_transform()
-    if not xform then return false, "transform: " .. tostring(err) end
+    local spawn_xform = build_spawn_xform(xform)
 
-    -- Build the FTransform arg expected by BeginDeferredActorSpawnFromClass.
-    -- UE expects { Rotation: FQuat, Translation: FVector, Scale3D: FVector } ;
-    -- UE4SS accepts a plain Lua table and will marshal a rotator-shaped Rot
-    -- into the quat for us as long as we pass it under the Rotation key.
-    -- Safer route : pass the rotator under "Rotator" in the BP_Spawn variant ;
-    -- for the GameplayStatics overload we hand-build the quat from yaw.
-    local yaw_rad = (xform.rot.Yaw or 0) * math.pi / 360.0  -- half-angle
-    local sin_y, cos_y = math.sin(yaw_rad), math.cos(yaw_rad)
-    local spawn_xform = {
-        Rotation    = { X = 0, Y = 0, Z = sin_y, W = cos_y },
-        Translation = { X = xform.loc.X, Y = xform.loc.Y, Z = xform.loc.Z },
-        Scale3D     = { X = 1, Y = 1, Z = 1 },
-    }
-
-    -- ESpawnActorCollisionHandlingMethod (UE5 ordering) :
-    --   0 Undefined  1 AlwaysSpawn  2 AdjustIfPossibleButAlwaysSpawn
-    --   3 AdjustIfPossibleButDontSpawnIfColliding  4 DontSpawnIfColliding
-    -- Round 1 of this verb used 4 by mistake (assumed Always-Adjust) which
-    -- silently rejected any spawn with a capsule near world geometry
-    -- (e.g. NPCs at the aim trace). 2 = adjust-but-always-spawn matches
-    -- what `summon` effectively does. ETransformScaleMethod : 0 = MultiplyWithRoot.
     local actor
     local ok_b, err_b = pcall(function()
         actor = gpl:BeginDeferredActorSpawnFromClass(
@@ -2432,14 +2537,6 @@ function M.spawn(value_str)
         return false, "BeginDeferredActorSpawnFromClass returned null"
     end
 
-    -- Persistence opt-in : every AWorldActor descendant carries
-    -- `bRegisterAsRuntimeSpawned` (offset 0x310 on the native base). The
-    -- save/load subsystem only enrolls actors whose flag is true at
-    -- BeginPlay-time. CDO defaults vary per class : some are true (the
-    -- ones the user empirically confirmed persist when designer-placed
-    -- and re-spawned), some are false. Force true here so any class can
-    -- survive a save round-trip when spawned via this verb. pcall'd so
-    -- non-AWorldActor classes (no such field) don't trap.
     pcall(function() actor.bRegisterAsRuntimeSpawned = true end)
 
     local warnings = {}
@@ -2454,25 +2551,68 @@ function M.spawn(value_str)
         return false, "FinishSpawningActor trapped: " .. tostring(err_f)
     end
 
-    -- Stash for the `lastspawned` reach root so reskin / configure verbs
-    -- can target this actor right after spawn (e.g. set_asset on its
-    -- StaticMeshComponent.StaticMesh).
     pcall(function()
         local feature_field = require("feature_field")
         feature_field.set_last_spawned(actor)
     end)
 
-    -- Build a one-line ack with class + (x,y,z) + warnings count.
-    local detail = string.format("%s @ (%.1f,%.1f,%.1f)",
-        class_path, xform.loc.X, xform.loc.Y, xform.loc.Z)
+    local detail = spawn_detail(class_path, xform, include_full_transform)
     if #warnings > 0 then
         detail = detail .. string.format(" [%d field warnings]", #warnings)
         for _, w in ipairs(warnings) do
-            print("[RSDWTools] world.spawn warn: " .. w)
+            print("[RSDWTools] " .. log_verb .. " warn: " .. w)
         end
     end
-    print(string.format("[RSDWTools] world.spawn %s", detail))
+    print(string.format("[RSDWTools] %s %s", log_verb, detail))
     return true, detail
+end
+
+-- world.spawn implementation.
+function M.spawn(value_str)
+    local s = value_str and value_str:match("^%s*(.-)%s*$") or ""
+    if s == "" then
+        return false, "usage: world.spawn <ClassPath> [{json fields}]"
+    end
+
+    local class_path, json_tail = split_class_and_json_tail(s)
+
+    if class_path == "" then return false, "empty class path" end
+
+    local fields = nil
+    if json_tail and json_tail ~= "" then
+        local parsed, perr = _parse_flat_json_object(json_tail)
+        if not parsed then return false, "JSON parse failed: " .. tostring(perr) end
+        if contains_array_value(parsed) then
+            return false, "JSON arrays are supported only by world.spawn.transform loc/rot/scale"
+        end
+        fields = parsed
+    end
+
+    local xform, err = compute_spawn_transform()
+    if not xform then return false, "transform: " .. tostring(err) end
+
+    return spawn_actor_deferred(class_path, fields, xform, "world.spawn", false)
+end
+
+function M.spawn_transform(value_str)
+    local s = value_str and value_str:match("^%s*(.-)%s*$") or ""
+    if s == "" then
+        return false, "usage: world.spawn.transform <ClassPath> {\"loc\":[x,y,z],\"rot\":[pitch,yaw,roll],\"scale\":[x,y,z]}"
+    end
+
+    local class_path, json_tail = split_class_and_json_tail(s)
+    if class_path == "" then return false, "empty class path" end
+    if not (json_tail and json_tail ~= "") then
+        return false, "world.spawn.transform requires JSON with loc:[x,y,z]"
+    end
+
+    local parsed, perr = _parse_flat_json_object(json_tail)
+    if not parsed then return false, "JSON parse failed: " .. tostring(perr) end
+
+    local xform, fields, xerr = parse_explicit_spawn_transform(parsed)
+    if not xform then return false, "transform: " .. tostring(xerr) end
+
+    return spawn_actor_deferred(class_path, fields, xform, "world.spawn.transform", true)
 end
 
 function M.spawn_safe(value_str)

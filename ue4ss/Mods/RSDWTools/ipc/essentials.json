@@ -2,6 +2,24 @@
   "version": 5,
   "folders": [
     {
+      "name": "Instant Main Menu",
+      "mods": [
+        {
+          "name": "Main Menu",
+          "class": "DominionPlayerController",
+          "reach_spec": "controller",
+          "field": "SwitchLevel",
+          "value": "L_FrontEnd",
+          "type": "call",
+          "ue_type": "(URL: FString)",
+          "note": "inherited from APlayerController",
+          "kind": "call"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#E0C04F"
+    },
+    {
       "name": "Instant Home Teleport (Host)",
       "mods": [
         {

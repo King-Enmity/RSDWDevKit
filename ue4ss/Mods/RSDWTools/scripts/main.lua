@@ -223,6 +223,7 @@ if RegisterHook then
     local ok, pre_id, post_id = pcall(function()
         return RegisterHook("/Script/Engine.PlayerController:ClientRestart", function()
             feature_umg.on_player_ready()
+            feature_hotkeys.on_player_ready()
         end)
     end)
     if ok then

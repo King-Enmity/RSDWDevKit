@@ -58,6 +58,19 @@ local function _toast(msg, secs)
     pcall(function() feature_umg.toast(msg, secs or 1.5) end)
 end
 
+local function _destroy_actor(actor)
+    if not feature_actor.is_valid_object(actor) then return false end
+    if actor.K2_DestroyActor then
+        local ok = pcall(function() actor:K2_DestroyActor() end)
+        if ok then return true end
+    end
+    if actor.DestroyActor then
+        local ok = pcall(function() actor:DestroyActor() end)
+        if ok then return true end
+    end
+    return false
+end
+
 -- ---------- tunables ----------
 
 -- Tick rate for the follow loop. 30 Hz is plenty: the camera updates
@@ -213,15 +226,13 @@ local function get_oculus_pawn_safe()
     return pawn  -- may be nil ; that's fine, just means oculus isn't active
 end
 
-local function _trace_from_camera(distance)
+local function build_camera_ray(distance)
     distance = tonumber(distance) or LOOKAT_MAX_DISTANCE
     if distance < 100.0 then distance = LOOKAT_MAX_DISTANCE end
 
     local cam_loc, cam_rot, err = get_camera_viewpoint()
-    if not cam_loc then return nil, nil, "camera unavailable: " .. tostring(err) end
+    if not cam_loc then return nil, nil, nil, nil, "camera unavailable: " .. tostring(err) end
 
-    -- Forward unit vector built from full pitch+yaw so a downward look
-    -- traces into the ground (unlike the grab plane which is XY only).
     local pitch = (cam_rot.Pitch or 0) * math.pi / 180.0
     local yaw   = (cam_rot.Yaw   or 0) * math.pi / 180.0
     local cp = math.cos(pitch)
@@ -235,6 +246,12 @@ local function _trace_from_camera(distance)
         Y = cam_loc.Y + fy * distance,
         Z = cam_loc.Z + fz * distance,
     }
+    return start_v, end_v, { X = fx, Y = fy, Z = fz }, cam_rot, nil
+end
+
+local function _trace_from_camera(distance)
+    local start_v, end_v, _forward, _cam_rot, ray_err = build_camera_ray(distance)
+    if not start_v then return nil, nil, tostring(ray_err) end
 
     local ksl = get_kismet_lib()
     if not ksl then return nil, nil, "KismetSystemLibrary CDO unavailable" end
@@ -329,27 +346,38 @@ local function _trace_from_camera(distance)
             a = hr.Actor
         end
         local comp = hr.Component
-        if (not a) and comp then
-            -- Component is userdata. GetOwner may exist directly, or we
-            -- may need to go through the wrapper's :get() / :ToObject()
-            -- (UE4SS's RemoteUnrealParam pattern). Try both.
-            if comp.GetOwner then
-                local oko, v = pcall(function() return comp:GetOwner() end)
-                if oko and feature_actor.is_valid_object(v) then a = v end
-            end
-            if not a then
+        local comp_obj = comp
+        if comp then
+            if feature_actor.is_valid_object(comp) then
+                comp_obj = comp
+            else
                 local okg, real = pcall(function()
                     if comp.get then return comp:get() end
                     if comp.ToObject then return comp:ToObject() end
                     return nil
                 end)
+                if okg and feature_actor.is_valid_object(real) then
+                    comp_obj = real
+                end
+            end
+        end
+        if (not a) and comp_obj then
+            -- Component is userdata. GetOwner may exist directly, or we
+            -- may need to go through the wrapper's :get() / :ToObject()
+            -- (UE4SS's RemoteUnrealParam pattern). Try both.
+            if comp_obj and comp_obj.GetOwner then
+                local oko, v = pcall(function() return comp_obj:GetOwner() end)
+                if oko and feature_actor.is_valid_object(v) then a = v end
+            end
+            if not a then
+                local okg, real = pcall(function() return comp_obj end)
                 if okg and real and real.GetOwner then
                     local oko, v = pcall(function() return real:GetOwner() end)
                     if oko and feature_actor.is_valid_object(v) then a = v end
                 end
             end
         end
-        return a, comp
+        return a, comp_obj or comp
     end
 
     local ok, did_hit = _do_line_trace()
@@ -429,10 +457,17 @@ local function _trace_from_camera(distance)
         end
         local short = dump
         if #short > 240 then short = short:sub(1, 240) .. "..." end
-        return nil, nil, "hit non-actor geometry [comp=" .. cclass .. "]" .. where .. " fields=" .. short
+        return nil, impact, "hit non-actor geometry [comp=" .. cclass .. "]" .. where .. " fields=" .. short
     end
     local impact = hit.Location or hit.ImpactPoint
-    return actor, impact, nil
+    return actor, impact, nil, {
+        component = comp,
+        item = hit.Item,
+        my_item = hit.MyItem,
+        element_index = hit.ElementIndex,
+        face_index = hit.FaceIndex,
+        hit = hit,
+    }
 end
 
 -- ---------- math ----------
@@ -601,15 +636,12 @@ end
 -- class block, transform seeding and grab-state allocation only live
 -- in one place. Returns the same (ok, detail) tuple as M.start.
 local function _begin_grab(actor, picked_name)
-    -- Round 62: forbid grabbing world-static / foliage actors. Both
-    -- categories are treated by the engine as immovable instances ;
-    -- moving them tends to crash because their collision and nav
-    -- representations live in fixed BVH/HISM buckets that are not
-    -- updated per-frame. Match on class short name (covers both the
-    -- C++ AStaticMeshActor and the foliage AInstancedFoliageActor).
-    -- We also peek at the actor's full name as a belt-and-braces
-    -- check in case GetClass() returns something unexpected.
-    local function _grab_blocked_class(a)
+    -- Round 62+: forbid grabbing world-static / foliage / building-piece
+    -- actors. These are engine-owned placement/world objects; moving them
+    -- outside their native systems can desync collision, nav, placement or
+    -- persistence state. Match on cheap actor properties and names rather
+    -- than walking class ancestry, which has been unsafe in this UE4SS build.
+    local function _grab_block_reason(a)
         local cls_name, full_name
         pcall(function()
             local c = a:GetClass()
@@ -617,18 +649,26 @@ local function _begin_grab(actor, picked_name)
         end)
         pcall(function() full_name = a:GetFullName() end)
         local hay = ((cls_name or "") .. " " .. (full_name or "")):lower()
+
+        local building_piece_data_index
+        pcall(function() building_piece_data_index = a.BuildingPieceDataIndex end)
+        if type(building_piece_data_index) == "number" then
+            return "building piece", "BuildingPieceDataIndex=" .. tostring(building_piece_data_index)
+        end
+
         if hay:find("staticmeshactor", 1, true)
             or hay:find("instancedfoliageactor", 1, true)
-            or hay:find("landscapestreamingproxy", 1, true) then
-            return cls_name or full_name or "<unknown>"
+            or hay:find("landscapestreamingproxy", 1, true)
+            or hay:find("bpp_", 1, true) then
+            return "world-static/environment", cls_name or full_name or "<unknown>"
         end
         return nil
     end
-    local blocked = _grab_blocked_class(actor)
-    if blocked then
+    local blocked_kind, blocked_detail = _grab_block_reason(actor)
+    if blocked_kind then
         return false, string.format(
-            "refusing to grab '%s' : class '%s' is world-static (StaticMeshActor / InstancedFoliageActor) and is unsafe to move",
-            tostring(picked_name), tostring(blocked))
+            "refusing to grab '%s' : target is %s (%s) and is unsafe to move with camera.grab",
+            tostring(picked_name), tostring(blocked_kind), tostring(blocked_detail))
     end
 
     local cam_loc, cam_rot, cerr = get_camera_viewpoint()
@@ -754,13 +794,7 @@ function M.start_lastspawned()
     return _begin_grab(actor, picked_name)
 end
 
--- camera.lookat -- pure read-only "what's the camera pointed at?".
--- Source priority:
---   1. Detector (player-char path) -- only when NOT in oculus mode,
---      because the detector traces from the player character itself.
---   2. KismetSystemLibrary line trace from the active camera viewpoint
---      (which becomes the oculus pawn's camera while flying around).
-function M.lookat()
+local function pick_target_under_reticle()
     local actor, source, impact = nil, nil, nil
     if not _oculus_is_active() then
         actor = _detector_pick()
@@ -769,30 +803,75 @@ function M.lookat()
     if not actor then
         local hit_actor, hit_impact, err = _trace_from_camera(LOOKAT_MAX_DISTANCE)
         if not hit_actor then
-            return false, "no actor under reticle (trace: " .. tostring(err) .. ")"
+            return nil, nil, nil, "no actor under reticle (trace: " .. tostring(err) .. ")"
         end
         actor = hit_actor
         impact = hit_impact
         source = "trace"
     end
+    local loc = impact or feature_actor.actor_location(actor) or { X = 0, Y = 0, Z = 0 }
+    return actor, loc, source, nil
+end
+
+local function pick_location_under_reticle()
+    if not _oculus_is_active() then
+        local actor = _detector_pick()
+        if feature_actor.is_valid_object(actor) then
+            return actor, feature_actor.actor_location(actor) or { X = 0, Y = 0, Z = 0 }, "detector", nil
+        end
+    end
+    local hit_actor, hit_impact, err = _trace_from_camera(LOOKAT_MAX_DISTANCE)
+    if feature_actor.is_valid_object(hit_actor) then
+        return hit_actor, hit_impact or feature_actor.actor_location(hit_actor) or { X = 0, Y = 0, Z = 0 }, "trace", nil
+    end
+    if hit_impact then
+        return nil, hit_impact, "trace.geometry", err
+    end
+    return nil, nil, nil, "no location under reticle (trace: " .. tostring(err) .. ")"
+end
+
+-- camera.lookat -- pure read-only "what's the camera pointed at?".
+-- Source priority:
+--   1. Detector (player-char path) -- only when NOT in oculus mode,
+--      because the detector traces from the player character itself.
+--   2. KismetSystemLibrary line trace from the active camera viewpoint
+--      (which becomes the oculus pawn's camera while flying around).
+function M.lookat()
+    local actor, loc, source, err = pick_target_under_reticle()
+    if not actor then return false, err end
     local short = feature_actor.short_name_of(actor) or "<unnamed>"
     local class = feature_field.class_name_of(actor) or "<unknown>"
     -- Toast a tidy label (engine `_UAID_*` suffix stripped) so the
     -- player can glance at the screen and know what their reticle is
     -- on without alt-tabbing to the bridge log.
     _toast(_label_for(actor), 1.5)
-    if impact then
-        return true, string.format(
-            "%s [class=%s, src=%s] @ (%.0f, %.0f, %.0f)",
-            short, class, source, impact.X or 0, impact.Y or 0, impact.Z or 0
-        )
-    end
-    -- Detector path: report actor's own location instead of an impact point.
-    local loc = feature_actor.actor_location(actor) or { X = 0, Y = 0, Z = 0 }
     return true, string.format(
         "%s [class=%s, src=%s] @ (%.0f, %.0f, %.0f)",
         short, class, source, loc.X or 0, loc.Y or 0, loc.Z or 0
     )
+end
+
+function M.destroy_lookat()
+    local actor, loc, source, err = pick_target_under_reticle()
+    if not feature_actor.is_valid_object(actor) then return false, tostring(err or "no actor under reticle") end
+
+    local pawn = feature_actor.get_local_pawn()
+    if feature_actor.is_valid_object(pawn) and actor == pawn then
+        return false, "refusing to destroy local player pawn"
+    end
+    local opawn = get_oculus_pawn_safe()
+    if feature_actor.is_valid_object(opawn) and actor == opawn then
+        return false, "refusing to destroy oculus pawn"
+    end
+
+    local label = _label_for(actor)
+    local short = feature_actor.short_name_of(actor) or "<unnamed>"
+    local class = feature_field.class_name_of(actor) or "<unknown>"
+    if grab and grab.actor == actor then grab = nil end
+    if not _destroy_actor(actor) then return false, "destroy failed: " .. tostring(short) end
+    _toast("Destroyed: " .. label, 1.5)
+    return true, string.format("%s [class=%s, src=%s] @ (%.0f, %.0f, %.0f)",
+        short, class, tostring(source), loc.X or 0, loc.Y or 0, loc.Z or 0)
 end
 
 -- camera.grab.release   -- drop in place
@@ -939,6 +1018,35 @@ function M.pick_actor_under_reticle()
     local hit_actor, _impact, err = _trace_from_camera(LOOKAT_MAX_DISTANCE)
     if feature_actor.is_valid_object(hit_actor) then return hit_actor, "trace" end
     return nil, "no actor under reticle (trace: " .. tostring(err) .. ")"
+end
+
+function M.pick_target_under_reticle()
+    return pick_target_under_reticle()
+end
+
+function M.pick_location_under_reticle()
+    return pick_location_under_reticle()
+end
+
+function M.pick_hit_under_reticle()
+    if not _oculus_is_active() then
+        local actor = _detector_pick()
+        if feature_actor.is_valid_object(actor) then
+            return actor, feature_actor.actor_location(actor) or { X = 0, Y = 0, Z = 0 }, "detector", nil, nil
+        end
+    end
+    local actor, loc, err, details = _trace_from_camera(LOOKAT_MAX_DISTANCE)
+    if feature_actor.is_valid_object(actor) then
+        return actor, loc or feature_actor.actor_location(actor) or { X = 0, Y = 0, Z = 0 }, "trace", nil, details
+    end
+    if loc then
+        return nil, loc, "trace.geometry", err, details
+    end
+    return nil, nil, nil, "no hit under reticle (trace: " .. tostring(err) .. ")", details
+end
+
+function M.reticle_ray(distance)
+    return build_camera_ray(distance or LOOKAT_MAX_DISTANCE)
 end
 
 return M

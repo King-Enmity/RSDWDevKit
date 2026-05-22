@@ -134,7 +134,7 @@
       "color": "#E0C04F"
     },
     {
-      "name": "All Items - Set Stack to 9999 (EXPERIMENTAL - Be Careful)",
+      "name": "All Items - Set Item Count to 9999 (EXPERIMENTAL - Be Careful)",
       "mods": [
         {
           "name": "All Items 9999",
@@ -151,7 +151,7 @@
           "class": "",
           "reach_spec": "",
           "field": "",
-          "value": "All Items - Set Stack to 9999",
+          "value": "All Items - Set to 9999",
           "type": "",
           "ue_type": "",
           "kind": "umg",

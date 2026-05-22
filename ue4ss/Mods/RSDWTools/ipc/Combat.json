@@ -88,31 +88,58 @@
       "color": "#7B5FE0"
     },
     {
-      "name": "Attack Speed (2x)",
+      "name": "Refill Health",
       "mods": [
         {
-          "name": "Set Attack Speed",
+          "name": "Increase Health",
           "class": "",
           "reach_spec": "",
           "field": "",
-          "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Effects/GE_ModifyMeleeAttackSpeed.GE_ModifyMeleeAttackSpeed_C Data.AmountToModify.Value 2.0",
+          "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Effects/GE_ModifyHealth_Increase.GE_ModifyHealth_Increase_C Data.AmountToModify.Value 99.0",
           "type": "",
           "ue_type": "",
           "kind": "raw"
         },
         {
-          "name": "Apply Attack Speed",
+          "name": "Apply Health",
           "class": "",
           "reach_spec": "",
           "field": "",
-          "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Effects/GE_ModifyMeleeAttackSpeed.GE_ModifyMeleeAttackSpeed_C",
+          "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Effects/GE_ModifyHealth_Increase.GE_ModifyHealth_Increase_C",
           "type": "",
           "ue_type": "",
           "kind": "raw"
         }
       ],
       "author": "Hi im Tat",
-      "color": "#E0584F"
+      "color": "#C04FB0"
+    },
+    {
+      "name": "Refill VitalShield",
+      "mods": [
+        {
+          "name": "Rate to Refill",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Buffs/GE_WardFruit.GE_WardFruit_C Data.PeriodicInterval.Value 0.01",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "Apply Refill",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Buffs/GE_WardFruit.GE_WardFruit_C",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#C04FB0"
     },
     {
       "name": "Infinite Stamina",
@@ -227,5 +254,242 @@
       "color": "#5A8C5A"
     }
   ],
-  "kits": []
+  "kits": [
+    {
+      "name": "Combat Multipliers",
+      "folders": [
+        {
+          "name": "Melee Attack Speed (2x)",
+          "mods": [
+            {
+              "name": "Set Attack Speed",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Effects/GE_ModifyMeleeAttackSpeed.GE_ModifyMeleeAttackSpeed_C Data.AmountToModify.Value 2.0",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Apply Attack Speed",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Effects/GE_ModifyMeleeAttackSpeed.GE_ModifyMeleeAttackSpeed_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Attack Speed (2x)",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "3"
+            }
+          ],
+          "author": "Hi im Tat",
+          "color": "#E0584F"
+        },
+        {
+          "name": "One-Handed Damage Multiplier (100x)",
+          "mods": [
+            {
+              "name": "Set Multiplier 100x",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Trinkets/GE_Trinket_IncreaseSpecificWeaponDamage_AmuletOfStrength_OneHanded.GE_Trinket_IncreaseSpecificWeaponDamage_AmuletOfStrength_OneHanded_C Data.AmountToModify.Value 100.0",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Apply Damage",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Trinkets/GE_Trinket_IncreaseSpecificWeaponDamage_AmuletOfStrength_OneHanded.GE_Trinket_IncreaseSpecificWeaponDamage_AmuletOfStrength_OneHanded_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "One-Handed Damage Multiplier (100x)",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "3"
+            }
+          ],
+          "author": "Hi im Tat",
+          "color": "#E0584F"
+        },
+        {
+          "name": "Two-Handed Damage Multiplier (100x)",
+          "mods": [
+            {
+              "name": "Set Multiplier 100x",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Trinkets/GE_Trinket_IncreaseSpecificWeaponDamage_AmuletOfStrength_TwoHanded.GE_Trinket_IncreaseSpecificWeaponDamage_AmuletOfStrength_TwoHanded_C Data.AmountToModify.Value 100.0",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Apply Damage",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Trinkets/GE_Trinket_IncreaseSpecificWeaponDamage_AmuletOfStrength_TwoHanded.GE_Trinket_IncreaseSpecificWeaponDamage_AmuletOfStrength_TwoHanded_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Two Handed Damage Multiplier (100x)",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "3"
+            }
+          ],
+          "author": "Hi im Tat",
+          "color": "#E0584F"
+        },
+        {
+          "name": "Crossbow Damage Multiplier (100x)",
+          "mods": [
+            {
+              "name": "Set Multiplier 100x",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Equipment/BlackSniperCrossbow/GE_Crossbow_WeakPointDamageMultiplier_BlackSniper.GE_Crossbow_WeakPointDamageMultiplier_BlackSniper_C Data.AmountToModify.Value 100.0",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Apply Damage",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Equipment/BlackSniperCrossbow/GE_Crossbow_WeakPointDamageMultiplier_BlackSniper.GE_Crossbow_WeakPointDamageMultiplier_BlackSniper_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Crossbow Damage Multiplier (100x)",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "3"
+            }
+          ],
+          "author": "Hi im Tat",
+          "color": "#E0584F"
+        },
+        {
+          "name": "Staff Damage Multiplier (100x)",
+          "mods": [
+            {
+              "name": "Set Multiplier 100x",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Trinkets/GE_Trinket_IncreaseMagicDamage_AmuletOfMagic.GE_Trinket_IncreaseMagicDamage_AmuletOfMagic_C Data.AmountToModify.Value 100.0",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Apply Damage",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Trinkets/GE_Trinket_IncreaseMagicDamage_AmuletOfMagic.GE_Trinket_IncreaseMagicDamage_AmuletOfMagic_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Staff Damage Multiplier (100x)",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "3"
+            }
+          ],
+          "author": "Hi im Tat",
+          "color": "#E0584F"
+        },
+        {
+          "name": "All Damage Multiplier (100x)",
+          "mods": [
+            {
+              "name": "Set Multiplier 100x",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Skills/Attack/GE_UnholySymbol_Damage_AllCombatStylesMultiplier.GE_UnholySymbol_Damage_AllCombatStylesMultiplier_C Data.AmountToModify.Value 100.0",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Apply Damage",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Skills/Attack/GE_UnholySymbol_Damage_AllCombatStylesMultiplier.GE_UnholySymbol_Damage_AllCombatStylesMultiplier_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Damage Multiplier (100x - Unholy Symbol Method)",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "3"
+            }
+          ],
+          "author": "Hi im Tat",
+          "color": "#E0584F"
+        }
+      ],
+      "show_apply_all": false,
+      "color": "#9E9E9E",
+      "sub_kits": []
+    }
+  ]
 }

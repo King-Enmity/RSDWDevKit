@@ -81,6 +81,7 @@
 --   player.revivedelay <sec>          (PlayerRespawnComponent.SelfReviveDelay; clamp 2..60)
 --   world.class.load <ClassPath>      (diagnostic: Kismet soft-class load without spawning)
 --   world.spawn.safe <ClassPath>      (spawn first, fall back to native summon)
+--   world.spawn.transform <ClassPath> {"loc":[x,y,z],"rot":[pitch,yaw,roll],"scale":[x,y,z]}
 --   player.critchance (removed in 11.5; see cheats-to-revisit.md section 13)
 --   player.foliagerange (removed in 11.5; see cheats-to-revisit.md section 14)
 --   player.spell.cancel               (PlayerMagicComponent.Server_CancelSpell on both magic components)
@@ -104,6 +105,16 @@
 --   camera.rig.play.file <filename>
 --   camera.rig.fov <degrees>
 --   camera.rig.lookat <actorName|off>
+--   camera.oculus.status
+--   camera.oculus.start|stop|toggle
+--   camera.oculus.init
+--   camera.oculus.help [on|off|toggle]
+--   camera.oculus.umg <on|off|toggle>
+--   camera.oculus.require <active|inactive|preview|repair>
+--   camera.oculus.speed [<maxSpeed> [acceleration] [deceleration]]
+--   camera.oculus.distance [<maxDistance> [falloffThreshold]]
+--   camera.oculus.vignette <off|on> [duration] [r,g,b,a]
+--   camera.oculus.watermark <off|on>
 --   player.get <key>                  (reads one of: time, jump.count, jump.hold, buildings,
 --                                                 tp.delay, tp.vfx, tp.timeout,
 --                                                 health, maxhealth, walkspeed, jumpvel,
@@ -228,6 +239,8 @@ local feature_probe  = require("feature_probe")
 local feature_introspect = require("feature_introspect")
 local feature_grab = require("feature_grab")
 local feature_camera = require("feature_camera")
+local feature_oculus = require("feature_oculus")
+local feature_oculus_config = require("feature_oculus_config")
 
 -- Round 30: when true the probe.* verbs print failure detail to the
 -- UE4SS console (in addition to the ack going back to the WPF). Useful
@@ -260,6 +273,7 @@ local feature_world = require("feature_world")
 local feature_progress = require("feature_progress")
 local feature_spud = require("feature_spud")
 local feature_persistence = require("feature_persistence")
+local feature_foliage = require("feature_foliage")
 local feature_foreach = require("feature_foreach")
 local feature_buildings = require("feature_buildings")
 local feature_build_preview = require("feature_build_preview")
@@ -1262,6 +1276,189 @@ function M._dispatch(line)
             if ok then return true, "ok world.resource.take " .. tostring(detail) end
             return false, "world.resource.take failed: " .. tostring(detail)
         end
+
+        -- world.foliage.* : cautious developer/test verbs for interactable
+        -- foliage ISM discovery, native conversion, and converted-tree state.
+        if line == "world.foliage.scan.near" or line:sub(1, #"world.foliage.scan.near ") == "world.foliage.scan.near " then
+            local ok, detail = feature_foliage.scan_near(arg_after("world.foliage.scan.near"))
+            if ok then return true, "ok world.foliage.scan.near " .. tostring(detail) end
+            return false, "world.foliage.scan.near failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.scan.all" or line:sub(1, #"world.foliage.scan.all ") == "world.foliage.scan.all " then
+            local ok, detail = feature_foliage.scan_all(arg_after("world.foliage.scan.all"))
+            if ok then return true, "ok world.foliage.scan.all " .. tostring(detail) end
+            return false, "world.foliage.scan.all failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.convert.lookat" or line:sub(1, #"world.foliage.convert.lookat ") == "world.foliage.convert.lookat " then
+            local ok, detail = feature_foliage.convert_lookat(arg_after("world.foliage.convert.lookat"))
+            if ok then return true, "ok world.foliage.convert.lookat " .. tostring(detail) end
+            return false, "world.foliage.convert.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.convert.near" or line:sub(1, #"world.foliage.convert.near ") == "world.foliage.convert.near " then
+            local ok, detail = feature_foliage.convert_near(arg_after("world.foliage.convert.near"))
+            if ok then return true, "ok world.foliage.convert.near " .. tostring(detail) end
+            return false, "world.foliage.convert.near failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.convert.single" or line:sub(1, #"world.foliage.tree.convert.single ") == "world.foliage.tree.convert.single " then
+            local ok, detail = feature_foliage.tree_convert_single(arg_after("world.foliage.tree.convert.single"))
+            if ok then return true, "ok world.foliage.tree.convert.single " .. tostring(detail) end
+            return false, "world.foliage.tree.convert.single failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.stump.single" or line:sub(1, #"world.foliage.tree.stump.single ") == "world.foliage.tree.stump.single " then
+            local ok, detail = feature_foliage.tree_stump_single(arg_after("world.foliage.tree.stump.single"))
+            if ok then return true, "ok world.foliage.tree.stump.single " .. tostring(detail) end
+            return false, "world.foliage.tree.stump.single failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.split.single" or line:sub(1, #"world.foliage.tree.split.single ") == "world.foliage.tree.split.single " then
+            local ok, detail = feature_foliage.tree_split_single(arg_after("world.foliage.tree.split.single"))
+            if ok then return true, "ok world.foliage.tree.split.single " .. tostring(detail) end
+            return false, "world.foliage.tree.split.single failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.destroy.single" or line:sub(1, #"world.foliage.tree.destroy.single ") == "world.foliage.tree.destroy.single " then
+            local ok, detail = feature_foliage.tree_destroy_single(arg_after("world.foliage.tree.destroy.single"))
+            if ok then return true, "ok world.foliage.tree.destroy.single " .. tostring(detail) end
+            return false, "world.foliage.tree.destroy.single failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.destroy.all" or line:sub(1, #"world.foliage.tree.destroy.all ") == "world.foliage.tree.destroy.all " then
+            local ok, detail = feature_foliage.tree_destroy_all(arg_after("world.foliage.tree.destroy.all"))
+            if ok then return true, "ok world.foliage.tree.destroy.all " .. tostring(detail) end
+            return false, "world.foliage.tree.destroy.all failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.forest.destroy.all" or line:sub(1, #"world.foliage.forest.destroy.all ") == "world.foliage.forest.destroy.all " then
+            local ok, detail = feature_foliage.tree_destroy_all(arg_after("world.foliage.forest.destroy.all"))
+            if ok then return true, "ok world.foliage.forest.destroy.all " .. tostring(detail) end
+            return false, "world.foliage.forest.destroy.all failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.properdestroy.all" or line:sub(1, #"world.foliage.tree.properdestroy.all ") == "world.foliage.tree.properdestroy.all " then
+            local ok, detail = feature_foliage.tree_destroy_all(arg_after("world.foliage.tree.properdestroy.all"))
+            if ok then return true, "ok world.foliage.tree.properdestroy.all " .. tostring(detail) end
+            return false, "world.foliage.tree.properdestroy.all failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.forest.properdestroy.all" or line:sub(1, #"world.foliage.forest.properdestroy.all ") == "world.foliage.forest.properdestroy.all " then
+            local ok, detail = feature_foliage.tree_destroy_all(arg_after("world.foliage.forest.properdestroy.all"))
+            if ok then return true, "ok world.foliage.forest.properdestroy.all " .. tostring(detail) end
+            return false, "world.foliage.forest.properdestroy.all failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.delete.all" or line:sub(1, #"world.foliage.tree.delete.all ") == "world.foliage.tree.delete.all " then
+            local ok, detail = feature_foliage.tree_destroy_all(arg_after("world.foliage.tree.delete.all"))
+            if ok then return true, "ok world.foliage.tree.delete.all " .. tostring(detail) end
+            return false, "world.foliage.tree.delete.all failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.forest.delete.all" or line:sub(1, #"world.foliage.forest.delete.all ") == "world.foliage.forest.delete.all " then
+            local ok, detail = feature_foliage.tree_destroy_all(arg_after("world.foliage.forest.delete.all"))
+            if ok then return true, "ok world.foliage.forest.delete.all " .. tostring(detail) end
+            return false, "world.foliage.forest.delete.all failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.stump.all" or line:sub(1, #"world.foliage.tree.stump.all ") == "world.foliage.tree.stump.all " then
+            local ok, detail = feature_foliage.tree_stump_all(arg_after("world.foliage.tree.stump.all"))
+            if ok then return true, "ok world.foliage.tree.stump.all " .. tostring(detail) end
+            return false, "world.foliage.tree.stump.all failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.forest.stump.all" or line:sub(1, #"world.foliage.forest.stump.all ") == "world.foliage.forest.stump.all " then
+            local ok, detail = feature_foliage.tree_stump_all(arg_after("world.foliage.forest.stump.all"))
+            if ok then return true, "ok world.foliage.forest.stump.all " .. tostring(detail) end
+            return false, "world.foliage.forest.stump.all failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.split.all" or line:sub(1, #"world.foliage.tree.split.all ") == "world.foliage.tree.split.all " then
+            local ok, detail = feature_foliage.tree_split_all(arg_after("world.foliage.tree.split.all"))
+            if ok then return true, "ok world.foliage.tree.split.all " .. tostring(detail) end
+            return false, "world.foliage.tree.split.all failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.forest.split.all" or line:sub(1, #"world.foliage.forest.split.all ") == "world.foliage.forest.split.all " then
+            local ok, detail = feature_foliage.tree_split_all(arg_after("world.foliage.forest.split.all"))
+            if ok then return true, "ok world.foliage.forest.split.all " .. tostring(detail) end
+            return false, "world.foliage.forest.split.all failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.destroy.lookat" or line:sub(1, #"world.foliage.tree.destroy.lookat ") == "world.foliage.tree.destroy.lookat " then
+            local ok, detail = feature_foliage.tree_destroy_lookat(arg_after("world.foliage.tree.destroy.lookat"))
+            if ok then return true, "ok world.foliage.tree.destroy.lookat " .. tostring(detail) end
+            return false, "world.foliage.tree.destroy.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.forest.destroy.lookat" or line:sub(1, #"world.foliage.forest.destroy.lookat ") == "world.foliage.forest.destroy.lookat " then
+            local ok, detail = feature_foliage.tree_destroy_lookat(arg_after("world.foliage.forest.destroy.lookat"))
+            if ok then return true, "ok world.foliage.forest.destroy.lookat " .. tostring(detail) end
+            return false, "world.foliage.forest.destroy.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.properdestroy.lookat" or line:sub(1, #"world.foliage.tree.properdestroy.lookat ") == "world.foliage.tree.properdestroy.lookat " then
+            local ok, detail = feature_foliage.tree_destroy_lookat(arg_after("world.foliage.tree.properdestroy.lookat"))
+            if ok then return true, "ok world.foliage.tree.properdestroy.lookat " .. tostring(detail) end
+            return false, "world.foliage.tree.properdestroy.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.forest.properdestroy.lookat" or line:sub(1, #"world.foliage.forest.properdestroy.lookat ") == "world.foliage.forest.properdestroy.lookat " then
+            local ok, detail = feature_foliage.tree_destroy_lookat(arg_after("world.foliage.forest.properdestroy.lookat"))
+            if ok then return true, "ok world.foliage.forest.properdestroy.lookat " .. tostring(detail) end
+            return false, "world.foliage.forest.properdestroy.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.delete.lookat" or line:sub(1, #"world.foliage.tree.delete.lookat ") == "world.foliage.tree.delete.lookat " then
+            local ok, detail = feature_foliage.tree_destroy_lookat(arg_after("world.foliage.tree.delete.lookat"))
+            if ok then return true, "ok world.foliage.tree.delete.lookat " .. tostring(detail) end
+            return false, "world.foliage.tree.delete.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.forest.delete.lookat" or line:sub(1, #"world.foliage.forest.delete.lookat ") == "world.foliage.forest.delete.lookat " then
+            local ok, detail = feature_foliage.tree_destroy_lookat(arg_after("world.foliage.forest.delete.lookat"))
+            if ok then return true, "ok world.foliage.forest.delete.lookat " .. tostring(detail) end
+            return false, "world.foliage.forest.delete.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.stump.lookat" or line:sub(1, #"world.foliage.tree.stump.lookat ") == "world.foliage.tree.stump.lookat " then
+            local ok, detail = feature_foliage.tree_stump_lookat(arg_after("world.foliage.tree.stump.lookat"))
+            if ok then return true, "ok world.foliage.tree.stump.lookat " .. tostring(detail) end
+            return false, "world.foliage.tree.stump.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.forest.stump.lookat" or line:sub(1, #"world.foliage.forest.stump.lookat ") == "world.foliage.forest.stump.lookat " then
+            local ok, detail = feature_foliage.tree_stump_lookat(arg_after("world.foliage.forest.stump.lookat"))
+            if ok then return true, "ok world.foliage.forest.stump.lookat " .. tostring(detail) end
+            return false, "world.foliage.forest.stump.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.stump.near" or line:sub(1, #"world.foliage.tree.stump.near ") == "world.foliage.tree.stump.near " then
+            local ok, detail = feature_foliage.tree_stump_near(arg_after("world.foliage.tree.stump.near"))
+            if ok then return true, "ok world.foliage.tree.stump.near " .. tostring(detail) end
+            return false, "world.foliage.tree.stump.near failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.split.lookat" or line:sub(1, #"world.foliage.tree.split.lookat ") == "world.foliage.tree.split.lookat " then
+            local ok, detail = feature_foliage.tree_split_lookat(arg_after("world.foliage.tree.split.lookat"))
+            if ok then return true, "ok world.foliage.tree.split.lookat " .. tostring(detail) end
+            return false, "world.foliage.tree.split.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.forest.split.lookat" or line:sub(1, #"world.foliage.forest.split.lookat ") == "world.foliage.forest.split.lookat " then
+            local ok, detail = feature_foliage.tree_split_lookat(arg_after("world.foliage.forest.split.lookat"))
+            if ok then return true, "ok world.foliage.forest.split.lookat " .. tostring(detail) end
+            return false, "world.foliage.forest.split.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.split.near" or line:sub(1, #"world.foliage.tree.split.near ") == "world.foliage.tree.split.near " then
+            local ok, detail = feature_foliage.tree_split_near(arg_after("world.foliage.tree.split.near"))
+            if ok then return true, "ok world.foliage.tree.split.near " .. tostring(detail) end
+            return false, "world.foliage.tree.split.near failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.redundant.lookat" or line:sub(1, #"world.foliage.tree.redundant.lookat ") == "world.foliage.tree.redundant.lookat " then
+            local ok, detail = feature_foliage.tree_redundant_lookat(arg_after("world.foliage.tree.redundant.lookat"))
+            if ok then return true, "ok world.foliage.tree.redundant.lookat " .. tostring(detail) end
+            return false, "world.foliage.tree.redundant.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.forest.redundant.lookat" or line:sub(1, #"world.foliage.forest.redundant.lookat ") == "world.foliage.forest.redundant.lookat " then
+            local ok, detail = feature_foliage.tree_redundant_lookat(arg_after("world.foliage.forest.redundant.lookat"))
+            if ok then return true, "ok world.foliage.forest.redundant.lookat " .. tostring(detail) end
+            return false, "world.foliage.forest.redundant.lookat failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.redundant.near" or line:sub(1, #"world.foliage.tree.redundant.near ") == "world.foliage.tree.redundant.near " then
+            local ok, detail = feature_foliage.tree_redundant_near(arg_after("world.foliage.tree.redundant.near"))
+            if ok then return true, "ok world.foliage.tree.redundant.near " .. tostring(detail) end
+            return false, "world.foliage.tree.redundant.near failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.destroy.near" or line:sub(1, #"world.foliage.tree.destroy.near ") == "world.foliage.tree.destroy.near " then
+            local ok, detail = feature_foliage.tree_destroy_near(arg_after("world.foliage.tree.destroy.near"))
+            if ok then return true, "ok world.foliage.tree.destroy.near " .. tostring(detail) end
+            return false, "world.foliage.tree.destroy.near failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.properdestroy.near" or line:sub(1, #"world.foliage.tree.properdestroy.near ") == "world.foliage.tree.properdestroy.near " then
+            local ok, detail = feature_foliage.tree_destroy_near(arg_after("world.foliage.tree.properdestroy.near"))
+            if ok then return true, "ok world.foliage.tree.properdestroy.near " .. tostring(detail) end
+            return false, "world.foliage.tree.properdestroy.near failed: " .. tostring(detail)
+        end
+        if line == "world.foliage.tree.delete.near" or line:sub(1, #"world.foliage.tree.delete.near ") == "world.foliage.tree.delete.near " then
+            local ok, detail = feature_foliage.tree_destroy_near(arg_after("world.foliage.tree.delete.near"))
+            if ok then return true, "ok world.foliage.tree.delete.near " .. tostring(detail) end
+            return false, "world.foliage.tree.delete.near failed: " .. tostring(detail)
+        end
         if line == "world.chest.probe" or line:sub(1, #"world.chest.probe ") == "world.chest.probe " then
             local ok, detail = feature_persistence.chest_probe(arg_after("world.chest.probe"))
             if ok then return true, "ok world.chest.probe " .. tostring(detail) end
@@ -1784,6 +1981,15 @@ function M._dispatch(line)
             return false, "world.spawn.safe failed: " .. tostring(detail)
         end
 
+        -- world.spawn.transform : explicit transform variant for tools that
+        -- already know world-space placement. Keeps plain world.spawn's
+        -- aim-trace/default-scale contract untouched for the Summon view.
+        if line:sub(1, 22) == "world.spawn.transform " then
+            local ok, detail = feature_player.spawn_transform(line:sub(23))
+            if ok then return true, "ok world.spawn.transform " .. tostring(detail) end
+            return false, "world.spawn.transform failed: " .. tostring(detail)
+        end
+
         -- world.spawn : transform-aware counterpart to world.summon. Routes
         -- through UGameplayStatics::BeginDeferredActorSpawnFromClass +
         -- FinishSpawningActor so we get (a) aim-trace location instead of
@@ -2143,6 +2349,7 @@ function M._dispatch(line)
     --   camera.grab.rotate <signed> dedicated yaw nudge (mode-independent)
     --   camera.grab.start [name]    latch named (or look-at) actor
     --   camera.lookat               probe what the camera trace hits
+    --   camera.destroy.lookat       destroy actor under the active camera reticle
     if line == "camera.debug.status" then
         local ok, detail = feature_camera.status()
         if ok then return true, "ok camera.debug.status " .. tostring(detail) end
@@ -2327,6 +2534,133 @@ function M._dispatch(line)
         if ok then return true, "ok camera.debug.speed " .. tostring(detail) end
         return false, "camera.debug.speed failed: " .. tostring(detail)
     end
+    if line == "camera.oculus.status" then
+        local ok, detail = feature_oculus.status()
+        if ok then return true, "ok camera.oculus.status " .. tostring(detail) end
+        return false, "camera.oculus.status failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.start" then
+        local ok, detail = feature_oculus.start()
+        if ok then
+            local active_ok, active_detail = feature_oculus.require_state("active")
+            if not active_ok then
+                return false, "camera.oculus.start init blocked: " .. tostring(active_detail)
+            end
+            local init_ok, init_detail = feature_oculus_config.run_init(function(cmd)
+                return M.handle_line(cmd)
+            end)
+            if init_ok then
+                local help_ok, help_detail = feature_oculus_config.show_hotkey_help(function(cmd)
+                    return M.handle_line(cmd)
+                end)
+                if help_ok then return true, "ok camera.oculus.start " .. tostring(detail) .. "; " .. tostring(init_detail) .. "; " .. tostring(help_detail) end
+                return false, "camera.oculus.start help failed: " .. tostring(help_detail)
+            end
+            return false, "camera.oculus.start init failed: " .. tostring(init_detail)
+        end
+        return false, "camera.oculus.start failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.help" or line:sub(1, 19) == "camera.oculus.help " then
+        local arg = line:sub(20):match("^%s*(.-)%s*$") or ""
+        local ok, detail
+        if arg == "" then
+            ok, detail = feature_oculus_config.set_hotkey_help_visibility("on")
+        else
+            ok, detail = feature_oculus_config.set_hotkey_help_visibility(arg)
+        end
+        if ok then return true, "ok camera.oculus.help " .. tostring(detail) end
+        return false, "camera.oculus.help failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.umg" or line:sub(1, 18) == "camera.oculus.umg " then
+        local arg = line:sub(19):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus_config.set_hotkey_help_visibility(arg)
+        if ok then return true, "ok camera.oculus.umg " .. tostring(detail) end
+        return false, "camera.oculus.umg failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.init" then
+        local active_ok, active_detail = feature_oculus.require_state("active")
+        if not active_ok then return false, "camera.oculus.init failed: " .. tostring(active_detail) end
+        local init_ok, init_detail = feature_oculus_config.run_init(function(cmd)
+            return M.handle_line(cmd)
+        end)
+        if init_ok then
+            local help_ok, help_detail = feature_oculus_config.show_hotkey_help(function(cmd)
+                return M.handle_line(cmd)
+            end)
+            if help_ok then return true, "ok camera.oculus.init " .. tostring(init_detail) .. "; " .. tostring(help_detail) end
+            return false, "camera.oculus.init help failed: " .. tostring(help_detail)
+        end
+        return false, "camera.oculus.init failed: " .. tostring(init_detail)
+    end
+    if line == "camera.oculus.stop" then
+        local ok, detail = feature_oculus.stop()
+        if ok then
+            local exit_ok, exit_detail = feature_oculus_config.run_exit(function(cmd)
+                return M.handle_line(cmd)
+            end)
+            feature_oculus_config.hide_hotkey_help()
+            if exit_ok then return true, "ok camera.oculus.stop " .. tostring(detail) .. "; " .. tostring(exit_detail) end
+            return false, "camera.oculus.stop exit failed: " .. tostring(exit_detail)
+        end
+        return false, "camera.oculus.stop failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.exit" then
+        local ok, detail = feature_oculus_config.run_exit(function(cmd)
+            return M.handle_line(cmd)
+        end, true)
+        if ok then return true, "ok camera.oculus.exit " .. tostring(detail) end
+        return false, "camera.oculus.exit failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.toggle" then
+        local ok, detail = feature_oculus.toggle()
+        if ok then
+            local active_ok = feature_oculus.require_state("active")
+            if active_ok then
+                feature_oculus_config.show_hotkey_help(function(cmd)
+                    return M.handle_line(cmd)
+                end)
+            else
+                local exit_ok, exit_detail = feature_oculus_config.run_exit(function(cmd)
+                    return M.handle_line(cmd)
+                end)
+                feature_oculus_config.hide_hotkey_help()
+                if not exit_ok then return false, "camera.oculus.toggle exit failed: " .. tostring(exit_detail) end
+                detail = tostring(detail) .. "; " .. tostring(exit_detail)
+            end
+            return true, "ok camera.oculus.toggle " .. tostring(detail)
+        end
+        return false, "camera.oculus.toggle failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.require" or line:sub(1, 22) == "camera.oculus.require " then
+        local arg = line:sub(23):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus.require_state(arg)
+        if ok then return true, "ok camera.oculus.require " .. tostring(detail) end
+        return false, "camera.oculus.require failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.speed" or line:sub(1, 20) == "camera.oculus.speed " then
+        local arg = line:sub(21):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus.speed(arg)
+        if ok then return true, "ok camera.oculus.speed " .. tostring(detail) end
+        return false, "camera.oculus.speed failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.distance" or line:sub(1, 23) == "camera.oculus.distance " then
+        local arg = line:sub(24):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus.distance(arg)
+        if ok then return true, "ok camera.oculus.distance " .. tostring(detail) end
+        return false, "camera.oculus.distance failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.vignette" or line:sub(1, 23) == "camera.oculus.vignette " then
+        local arg = line:sub(24):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus.vignette(arg)
+        if ok then return true, "ok camera.oculus.vignette " .. tostring(detail) end
+        return false, "camera.oculus.vignette failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.watermark" or line:sub(1, 24) == "camera.oculus.watermark " then
+        local arg = line:sub(25):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus.watermark(arg)
+        if ok then return true, "ok camera.oculus.watermark " .. tostring(detail) end
+        return false, "camera.oculus.watermark failed: " .. tostring(detail)
+    end
     if line:sub(1, 19) == "camera.grab.release" then
         local ok, detail = feature_grab.release()
         if ok then return true, "ok camera.grab.release " .. tostring(detail) end
@@ -2396,6 +2730,11 @@ function M._dispatch(line)
         local ok, detail = feature_grab.lookat()
         if ok then return true, "ok camera.lookat " .. tostring(detail) end
         return false, "camera.lookat failed: " .. tostring(detail)
+    end
+    if line == "camera.destroy.lookat" then
+        local ok, detail = feature_grab.destroy_lookat()
+        if ok then return true, "ok camera.destroy.lookat " .. tostring(detail) end
+        return false, "camera.destroy.lookat failed: " .. tostring(detail)
     end
 
     if line:sub(1, 4) == "tele" then

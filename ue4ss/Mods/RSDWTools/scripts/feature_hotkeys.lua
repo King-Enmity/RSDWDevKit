@@ -25,6 +25,7 @@
 
 local mod_paths = require("mod_paths")
 local command_line_router = require("command_line_router")
+local feature_oculus_config = require("feature_oculus_config")
 
 local M = {}
 
@@ -232,6 +233,8 @@ local _last_gamepad_buttons = 0
 local _gamepad_loop_started = false
 local _gamepad_log_enabled = false
 local GAMEPAD_POLL_MS = 16  -- ~60Hz, well below human chord-detect threshold
+local _oculus_reserved_chords = {}
+local _oculus_hotkeys_world_ready = false
 
 -- bit index -> UE-style FKey name. MUST stay in sync with the table in
 -- RSDWToolsUE4SS/dllmain.cpp::lua_gamepad_button_names. Bits 10/11 are
@@ -356,14 +359,25 @@ end
 -- discrete EKeys::MouseScrollUp / MouseScrollDown FKeys. Detect them
 -- BEFORE calling resolve_key so we don't print a spurious "unknown
 -- key" warning.
-local function is_wheel_token(name)
+-- Round 65: mouse buttons are routed through the same polling path so
+-- ordinary game clicks don't pass through RegisterKeyBindAsync callbacks.
+local function is_polled_input_token(name)
     return name == "WHEEL_UP" or name == "WHEEL_DOWN"
+        or name == "LEFT_MOUSE_BUTTON" or name == "RIGHT_MOUSE_BUTTON" or name == "MIDDLE_MOUSE_BUTTON"
+end
+
+local function polled_input_token(name)
+    if name == "WHEEL_UP"   then return "up"   end
+    if name == "WHEEL_DOWN" then return "down" end
+    return name
+end
+
+local function is_wheel_token(name)
+    return is_polled_input_token(name)
 end
 
 local function wheel_direction(name)
-    if name == "WHEEL_UP"   then return "up"   end
-    if name == "WHEEL_DOWN" then return "down" end
-    return nil
+    return polled_input_token(name)
 end
 
 local function resolve_modifiers(list)
@@ -388,16 +402,116 @@ local function resolve_modifiers(list)
     return out
 end
 
+local KEYBOARD_VK_TO_UE_MOD = {
+    LEFT_CONTROL  = "LeftControl",
+    RIGHT_CONTROL = "RightControl",
+    LEFT_SHIFT    = "LeftShift",
+    RIGHT_SHIFT   = "RightShift",
+    LEFT_ALT      = "LeftAlt",
+    RIGHT_ALT     = "RightAlt",
+}
+
+local KEYBOARD_UE_MOD_NAMES = { "LeftControl", "RightControl", "LeftShift", "RightShift", "LeftAlt", "RightAlt" }
+local _keyboard_fkey_cache = {}
+
+local function keyboard_fkey(name)
+    local cached = _keyboard_fkey_cache[name]
+    if cached then return cached end
+    if not FName then return nil end
+    local ok, fn = pcall(function() return FName(name) end)
+    if not ok or not fn then return nil end
+    local key = { KeyName = fn }
+    _keyboard_fkey_cache[name] = key
+    return key
+end
+
+local function keyboard_modifier_down(pc, ue_name)
+    if not pc or not pc.IsInputKeyDown then return false end
+    local key = keyboard_fkey(ue_name)
+    if not key then return false end
+    local ok, held = pcall(function() return pc:IsInputKeyDown(key) end)
+    return ok and held == true
+end
+
+local function keyboard_modifiers_exact(modifier_names)
+    local ok_net, feature_net = pcall(require, "feature_net")
+    if not ok_net or not feature_net then return false end
+    local pc = feature_net.local_controller()
+    if not pc or not pc.IsInputKeyDown then return false end
+
+    local wanted = {}
+    if type(modifier_names) == "table" then
+        for _, token in ipairs(modifier_names) do
+            local ue_name = KEYBOARD_VK_TO_UE_MOD[token]
+            if ue_name then wanted[ue_name] = true end
+        end
+    end
+
+    for _, ue_name in ipairs(KEYBOARD_UE_MOD_NAMES) do
+        local down = keyboard_modifier_down(pc, ue_name)
+        if wanted[ue_name] then
+            if not down then return false end
+        elseif down then
+            return false
+        end
+    end
+    return true
+end
+
 -- Tiny safe wrapper so a single bad mod row in a folder doesn't abort
 -- the whole apply. Errors print to the UE4SS console.
-local function safe_dispatch(line)
-    if not line then return end
+local function dispatch_result(line)
+    if not line or line == "" then return true, "empty", "skip" end
     local ok, ok2, msg = pcall(function() return command_line_router.handle_line(line) end)
     if not ok then
-        print("[RSDWTools.hotkeys] dispatch crash: " .. tostring(ok2))
+        return false, tostring(ok2), "crash"
     elseif ok2 == false then
+        return false, tostring(msg), "refused"
+    end
+    return true, tostring(msg), "ok"
+end
+
+local function safe_dispatch(line)
+    local ok, msg, kind = dispatch_result(line)
+    if kind == "skip" then return false end
+    if not ok and kind == "crash" then
+        print("[RSDWTools.hotkeys] dispatch crash: " .. tostring(msg))
+    elseif not ok then
         print("[RSDWTools.hotkeys] dispatch refused: " .. tostring(msg))
     end
+    return ok == true
+end
+
+local _oculus_world_gate_blocked_logged = false
+
+local function oculus_hotkeys_world_ready()
+    if _oculus_hotkeys_world_ready then
+        _oculus_world_gate_blocked_logged = false
+        return true
+    end
+    if not _oculus_world_gate_blocked_logged then
+        print("[RSDWTools.hotkeys] oculus hotkeys blocked: no local player character/world yet.")
+        _oculus_world_gate_blocked_logged = true
+    end
+    return false
+end
+
+local function safe_dispatch_oculus_gate(gate, lines, label)
+    if not oculus_hotkeys_world_ready() then return false end
+    if type(lines) == "string" then lines = { lines } end
+    if type(lines) ~= "table" or #lines == 0 then return false end
+    local gate_name = gate or "active"
+    if gate_name == "init" then gate_name = "active" end
+    local ok, msg = dispatch_result("camera.oculus.require " .. gate_name)
+    if not ok then
+        print(string.format("[RSDWTools.hotkeys] oculus '%s' blocked by gate '%s': %s",
+            label or lines[1] or "?", gate_name, tostring(msg)))
+        return false
+    end
+    for _, line in ipairs(lines) do
+        if not safe_dispatch(line) then return false end
+    end
+    return true
 end
 
 -- Round 62: shared startup-folder dispatch. Called from both keyboard
@@ -626,6 +740,78 @@ local function gamepad_chord_key(trigger_name, modifier_names)
     return tostring(trigger_name) .. "|" .. table.concat(mods, ",")
 end
 
+local function hotkey_modifier_signature(modifier_names)
+    local modifiers = {}
+    if type(modifier_names) == "table" then
+        for _, modifier_name in ipairs(modifier_names) do
+            if type(modifier_name) == "string" and modifier_name ~= "" then
+                modifiers[#modifiers + 1] = modifier_name:upper()
+            end
+        end
+        table.sort(modifiers)
+    end
+    return table.concat(modifiers, ",")
+end
+
+local function hotkey_chord_key(trigger_name, modifier_names)
+    if not trigger_name or trigger_name == "" then return nil end
+    local normalized_trigger = tostring(trigger_name):upper()
+    if is_polled_input_token(normalized_trigger) then
+        return "polled|" .. tostring(polled_input_token(normalized_trigger)) .. "|" .. hotkey_modifier_signature(modifier_names)
+    end
+    return "key|" .. normalized_trigger .. "|" .. hotkey_modifier_signature(modifier_names)
+end
+
+local function reserve_oculus_chord(chord_key, label)
+    if not chord_key then return 0 end
+    if not _oculus_reserved_chords[chord_key] then
+        _oculus_reserved_chords[chord_key] = label
+        return 1
+    end
+    return 0
+end
+
+local function reserve_oculus_hotkeys(doc)
+    _oculus_reserved_chords = {}
+    if not doc then return 0 end
+
+    local count = 0
+    for _, section in ipairs(doc.sections or {}) do
+        local section_name = section.name or section.gate or "Oculus"
+        for _, command in ipairs(section.commands or {}) do
+            local verb = command.verb
+            if (not verb or verb == "") and type(command.verbs) == "table" then verb = command.verbs[1] end
+            if verb and verb ~= "" then
+                local label = tostring(section_name) .. "/" .. tostring(command.name or verb or "?")
+                count = count + reserve_oculus_chord(hotkey_chord_key(command.hotkey, command.modifiers), label)
+                if command.gamepad_hotkey and command.gamepad_hotkey ~= "" then
+                    count = count + reserve_oculus_chord("gamepad|" .. gamepad_chord_key(command.gamepad_hotkey, command.gamepad_modifiers), label)
+                end
+            end
+        end
+    end
+    return count
+end
+
+local function oculus_conflict_label(trigger_name, modifier_names, gamepad)
+    if gamepad then
+        if not trigger_name or trigger_name == "" then return nil end
+        return _oculus_reserved_chords["gamepad|" .. gamepad_chord_key(trigger_name, modifier_names)]
+    end
+    local chord_key = hotkey_chord_key(trigger_name, modifier_names)
+    if not chord_key then return nil end
+    return _oculus_reserved_chords[chord_key]
+end
+
+local function skip_if_oculus_reserved(scope_label, label, trigger_name, modifier_names, gamepad)
+    local owner = oculus_conflict_label(trigger_name, modifier_names, gamepad)
+    if not owner then return false end
+    print(string.format("[RSDWTools.hotkeys] skipping %s '%s' hotkey %s%s; reserved by Oculus '%s'",
+        tostring(scope_label), tostring(label), tostring(trigger_name),
+        gamepad and " (gamepad)" or "", tostring(owner)))
+    return true
+end
+
 local function register_kit_gamepad_hotkey(kit_name, trigger_name, modifier_names, my_gen, kit)
     local key = gamepad_chord_key(trigger_name, modifier_names)
     _gamepad_dispatch[key] = function()
@@ -681,6 +867,79 @@ local function register_folder_gamepad_hotkey(kit_name, folder_index, folder, tr
             for _, m in ipairs(mods_list) do safe_dispatch(build_verb(m, nil)) end
         end
     end
+end
+
+local function register_oculus_doc(doc, my_gen)
+    if not doc then return 0 end
+    local count = 0
+    for section_index, section in ipairs(doc.sections or {}) do
+        local gate = section.gate or "active"
+        local section_name = section.name or gate
+        for command_index, command in ipairs(section.commands or {}) do
+            local verb = command.verb
+            if (not verb or verb == "") and type(command.verbs) == "table" then verb = command.verbs[1] end
+            local label = tostring(section_name) .. "/" .. tostring(command.name or verb or "?")
+            if verb and verb ~= "" then
+                local state_key = tostring(section_index) .. ":" .. tostring(command_index)
+                local cb = function()
+                    if _generation ~= my_gen then return end
+                    if not oculus_hotkeys_world_ready() then return end
+                    if not feature_oculus_config.can_attempt_cached_gate(gate) then return end
+                    local lines, next_state = feature_oculus_config.next_command_lines(state_key, command)
+                    if safe_dispatch_oculus_gate(gate, lines, label) then
+                        feature_oculus_config.commit_command_state(state_key, next_state)
+                        feature_oculus_config.refresh_hotkey_help()
+                    end
+                end
+                local hk = command.hotkey
+                if hk and hk ~= "" then
+                    if is_polled_input_token(hk) then
+                        require("feature_wheel_hook").register(polled_input_token(hk), command.modifiers, function()
+                            if not oculus_hotkeys_world_ready() then return end
+                            if not feature_oculus_config.can_attempt_cached_gate(gate) then return end
+                            cb()
+                        end, function()
+                            return oculus_hotkeys_world_ready()
+                                and feature_oculus_config.can_attempt_cached_gate(gate)
+                        end)
+                        count = count + 1
+                        print(string.format("[RSDWTools.hotkeys] oculus '%s' bound to %s", label, hk))
+                    else
+                        local kc = resolve_key(hk)
+                        if kc then
+                            local keyboard_cb = function()
+                                if _generation ~= my_gen then return end
+                                if not oculus_hotkeys_world_ready() then return end
+                                if not feature_oculus_config.can_attempt_cached_gate(gate) then return end
+                                if not keyboard_modifiers_exact(command.modifiers) then return end
+                                cb()
+                            end
+                            local ok, err = pcall(function()
+                                local mods_table = resolve_modifiers(command.modifiers)
+                                if mods_table then RegisterKeyBindAsync(kc, mods_table, keyboard_cb) else RegisterKeyBindAsync(kc, keyboard_cb) end
+                            end)
+                            if ok then
+                                count = count + 1
+                                print(string.format("[RSDWTools.hotkeys] oculus '%s' bound to %s", label, hk))
+                            else
+                                print("[RSDWTools.hotkeys] oculus bind failed: " .. tostring(err))
+                            end
+                        else
+                            print("[RSDWTools.hotkeys] unknown oculus key '" .. tostring(hk) .. "'")
+                        end
+                    end
+                end
+                local gp = command.gamepad_hotkey
+                if gp and gp ~= "" then
+                    local key = gamepad_chord_key(gp, command.gamepad_modifiers)
+                    _gamepad_dispatch[key] = cb
+                    count = count + 1
+                    print(string.format("[RSDWTools.hotkeys] oculus '%s' bound to gamepad %s", label, gp))
+                end
+            end
+        end
+    end
+    return count
 end
 
 -- Per-tick dispatcher. Pulls one XInput snapshot, edge-detects newly
@@ -797,12 +1056,16 @@ local function register_doc(doc, scope_label, my_gen)
     local function register_kit_recursive(kit, kit_name, parent_name)
         local kit_hk = kit.hotkey
         local kit_gp = kit.gamepad_hotkey
+        local kit_hk_conflict = kit_hk and kit_hk ~= "" and skip_if_oculus_reserved(scope_label, "kit " .. kit_name, kit_hk, kit.modifiers, false)
+        local kit_gp_conflict = kit_gp and kit_gp ~= "" and skip_if_oculus_reserved(scope_label, "kit " .. kit_name, kit_gp, kit.gamepad_modifiers, true)
+        local kit_hk_active = kit_hk and kit_hk ~= "" and not kit_hk_conflict
+        local kit_gp_active = kit_gp and kit_gp ~= "" and not kit_gp_conflict
         -- Gate starts armed only if the kit has NO trigger of any
         -- kind ; either keyboard or gamepad hotkey is enough to
         -- arm-off the kit at startup.
-        _kit_enabled[kit_name] = ((kit_hk == nil or kit_hk == "") and (kit_gp == nil or kit_gp == ""))
+        _kit_enabled[kit_name] = not (kit_hk_active or kit_gp_active)
         if parent_name then _kit_parents[kit_name] = parent_name end
-        if kit_hk and kit_hk ~= "" then
+        if kit_hk_active then
             if is_wheel_token(kit_hk) then
                 -- Wheel path : pass raw VK-style modifier name list ;
                 -- feature_wheel_hook translates them to UE FKey structs
@@ -820,7 +1083,7 @@ local function register_doc(doc, scope_label, my_gen)
                 end
             end
         end
-        if kit_gp and kit_gp ~= "" then
+        if kit_gp_active then
             register_kit_gamepad_hotkey(kit_name, kit_gp, kit.gamepad_modifiers, my_gen, kit)
             kit_count = kit_count + 1
         end
@@ -828,7 +1091,9 @@ local function register_doc(doc, scope_label, my_gen)
         for fi, folder in ipairs(folders) do
             local fhk = folder.hotkey
             if fhk and fhk ~= "" then
-                if is_wheel_token(fhk) then
+                if skip_if_oculus_reserved(scope_label, "folder " .. kit_name .. "/" .. tostring(folder.name or fi), fhk, folder.modifiers, false) then
+                    -- Reserved by Oculus ; skip imported binding.
+                elseif is_wheel_token(fhk) then
                     register_folder_hotkey(kit_name, fi, folder, fhk, nil,
                         folder.modifiers, my_gen)
                     folder_count = folder_count + 1
@@ -844,8 +1109,12 @@ local function register_doc(doc, scope_label, my_gen)
             end
             local fgp = folder.gamepad_hotkey
             if fgp and fgp ~= "" then
-                register_folder_gamepad_hotkey(kit_name, fi, folder, fgp, folder.gamepad_modifiers, my_gen)
-                folder_count = folder_count + 1
+                if skip_if_oculus_reserved(scope_label, "folder " .. kit_name .. "/" .. tostring(folder.name or fi), fgp, folder.gamepad_modifiers, true) then
+                    -- Reserved by Oculus ; skip imported binding.
+                else
+                    register_folder_gamepad_hotkey(kit_name, fi, folder, fgp, folder.gamepad_modifiers, my_gen)
+                    folder_count = folder_count + 1
+                end
             end
         end
         -- Round 60: recurse into nested kits. Sub-kit's composite name
@@ -873,7 +1142,9 @@ local function register_doc(doc, scope_label, my_gen)
     for fi, folder in ipairs(top_folders) do
         local fhk = folder.hotkey
         if fhk and fhk ~= "" then
-            if is_wheel_token(fhk) then
+            if skip_if_oculus_reserved(scope_label, "top-level " .. tostring(folder.name or fi), fhk, folder.modifiers, false) then
+                -- Reserved by Oculus ; skip imported binding.
+            elseif is_wheel_token(fhk) then
                 register_folder_hotkey(TOP, fi, folder, fhk, nil,
                     folder.modifiers, my_gen)
                 top_count = top_count + 1
@@ -893,10 +1164,14 @@ local function register_doc(doc, scope_label, my_gen)
         end
         local fgp = folder.gamepad_hotkey
         if fgp and fgp ~= "" then
-            register_folder_gamepad_hotkey(TOP, fi, folder, fgp, folder.gamepad_modifiers, my_gen)
-            top_count = top_count + 1
-            print(string.format("[RSDWTools.hotkeys] %s top-level '%s' bound to gamepad %s",
-                scope_label, folder.name or "?", fgp))
+            if skip_if_oculus_reserved(scope_label, "top-level " .. tostring(folder.name or fi), fgp, folder.gamepad_modifiers, true) then
+                -- Reserved by Oculus ; skip imported binding.
+            else
+                register_folder_gamepad_hotkey(TOP, fi, folder, fgp, folder.gamepad_modifiers, my_gen)
+                top_count = top_count + 1
+                print(string.format("[RSDWTools.hotkeys] %s top-level '%s' bound to gamepad %s",
+                    scope_label, folder.name or "?", fgp))
+            end
         end
     end
     return kit_count, folder_count, top_count
@@ -914,6 +1189,7 @@ function M.load_and_register()
     _kit_enabled  = {}
     _kit_parents  = {}
     _folder_state = {}
+    feature_oculus_config.reset_command_states()
     -- Reset gamepad dispatch ; old generation callbacks would early-out
     -- via _generation check anyway, but clearing the table keeps it
     -- bounded over many reloads.
@@ -931,6 +1207,7 @@ function M.load_and_register()
     local building_doc,   berr  = read_json_doc("building.json")
     local player_doc,     perr  = read_json_doc("player.json")
     local essentials_doc, eerr  = read_json_doc("essentials.json")
+    local oculus_doc,     oerr  = read_json_doc("oculus.json")
     if not mods_doc then
         print("[RSDWTools.hotkeys] no mods.json (" .. tostring(merr) .. ").")
     end
@@ -946,15 +1223,21 @@ function M.load_and_register()
     if not essentials_doc then
         print("[RSDWTools.hotkeys] no essentials.json (" .. tostring(eerr) .. ").")
     end
+    if not oculus_doc then
+        print("[RSDWTools.hotkeys] no oculus.json (" .. tostring(oerr) .. ").")
+    end
 
+    local reserved = reserve_oculus_hotkeys(oculus_doc)
+    local oc = register_oculus_doc(oculus_doc, my_gen)
     local mk, mf, mt = register_doc(mods_doc,       "mods",       my_gen)
     local ck, cf, ct = register_doc(camera_doc,     "camera",     my_gen)
     local bk, bf, bt = register_doc(building_doc,   "building",   my_gen)
     local pk, pf, pt = register_doc(player_doc,     "player",     my_gen)
     local ek, ef, et = register_doc(essentials_doc, "essentials", my_gen)
 
-    print(string.format("[RSDWTools.hotkeys] gen=%d mods(k=%d f=%d t=%d) camera(k=%d f=%d t=%d) building(k=%d f=%d t=%d) player(k=%d f=%d t=%d) essentials(k=%d f=%d t=%d) gp_chords=%d registered.",
+    print(string.format("[RSDWTools.hotkeys] gen=%d mods(k=%d f=%d t=%d) camera(k=%d f=%d t=%d) building(k=%d f=%d t=%d) player(k=%d f=%d t=%d) essentials(k=%d f=%d t=%d) oculus=%d reserved=%d gp_chords=%d registered.",
         my_gen, mk, mf, mt, ck, cf, ct, bk, bf, bt, pk, pf, pt, ek, ef, et,
+        oc, reserved,
         (function() local n=0 for _ in pairs(_gamepad_dispatch) do n=n+1 end return n end)()))
 
     -- Start the gamepad poll loop on first call ; subsequent reloads
@@ -966,6 +1249,14 @@ end
 function M.reload()
     print("[RSDWTools.hotkeys] reload requested.")
     M.load_and_register()
+end
+
+function M.on_player_ready()
+    if not _oculus_hotkeys_world_ready then
+        _oculus_hotkeys_world_ready = true
+        _oculus_world_gate_blocked_logged = false
+        print("[RSDWTools.hotkeys] oculus hotkeys world-ready.")
+    end
 end
 
 -- Toggle the smoke-test logger. When on, every controller press is

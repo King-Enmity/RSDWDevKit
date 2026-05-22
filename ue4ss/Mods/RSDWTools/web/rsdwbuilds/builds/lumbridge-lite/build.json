@@ -1,6 +1,6 @@
 {
   "name": "Lumbridge Lite",
-  "description": "Meticulously recreated OSRS Lumbridge. Includes Lumbridge Castle (with basement), Bob’s Axes, Church, Pub, General Store, Graveyard, H.A.M. entrance, swamp shed, farms, goblin house and both bridges.",
+  "description": "Meticulously recreated OSRS Lumbridge. Includes Lumbridge Castle (with basement), Bob\u2019s Axes, Church, Pub, General Store, Graveyard, H.A.M. entrance, swamp shed, farms, goblin house and both bridges.",
   "authors": [
     "Inevitance"
   ],
@@ -16,5 +16,6 @@
     "lumbridge_lite_2.webp"
   ],
   "download": "Lumbridge_Lite.json",
-  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/236"
+  "nexusmods": "https://www.nexusmods.com/runescapedragonwilds/mods/236",
+  "published_unix": 1778750413
 }

@@ -41,6 +41,9 @@ local feature_grab = require("feature_grab")
 -- userdata. Cleaned of dead entries on every clear().
 M._phantoms = {}
 
+local PIECE_ARM_COOLDOWN_SECONDS = 0.35
+local last_piece_arm_at = 0
+
 local function is_valid(obj)
     return feature_actor.is_valid_object(obj)
 end
@@ -89,6 +92,14 @@ local function obj_name_or_nil(obj)
     pcall(function() s = obj:GetFullName() end)
     if type(s) == "string" then return s end
     return nil
+end
+
+local function piece_arm_cooldown_remaining(now)
+    local elapsed = now - last_piece_arm_at
+    if last_piece_arm_at > 0 and elapsed >= 0 and elapsed < PIECE_ARM_COOLDOWN_SECONDS then
+        return PIECE_ARM_COOLDOWN_SECONDS - elapsed
+    end
+    return 0
 end
 
 local function obj_class_name_or_nil(obj)
@@ -1498,6 +1509,16 @@ function M.piece(args_str)
     local resolved
     pcall(function() resolved = pd:GetFullName() end)
     print("[RSDWTools] build.preview.piece: resolved -> " .. tostring(resolved))
+
+    local now = os.clock()
+    local cooldown_remaining = piece_arm_cooldown_remaining(now)
+    if cooldown_remaining > 0 then
+        print(string.format(
+            "[RSDWTools] build.preview.piece: skipped rapid re-arm (%.2fs cooldown remaining)",
+            cooldown_remaining))
+        return true, string.format("armed recently ; skipped %.2fs cooldown", cooldown_remaining)
+    end
+    last_piece_arm_at = now
 
     -- Reset to idle so OnPieceSelected reliably spawns a fresh PreviewPiece.
     if bmc.ExitAnyMode then

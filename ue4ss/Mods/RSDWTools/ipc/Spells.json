@@ -113,6 +113,23 @@
       ],
       "author": "Hi im Tat",
       "color": "#4F8FE0"
+    },
+    {
+      "name": "Instant Tempest Shield",
+      "mods": [
+        {
+          "name": "TempestShield",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.ge.apply /Game/Gameplay/UtilityMagic/PerkSpells/TempestShield/GE_TempestShield.GE_TempestShield_C",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        }
+      ],
+      "author": "Hi im Tat",
+      "color": "#9E9E9E"
     }
   ],
   "kits": []

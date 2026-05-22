@@ -1,5 +1,13 @@
 {
   "entries": [
+    "lumbridge-bobs-axes",
+    "lumbridge-castle",
+    "lumbridge-church",
+    "lumbridge-farm",
+    "lumbridge-general-store",
+    "lumbridge-pub",
+    "lumbridge-smithing",
+    "simple-home",
     "bed-hut",
     "chests-hut",
     "combat-training",
@@ -10,25 +18,17 @@
     "fight-pit",
     "fight-ring",
     "fletching-hut",
-    "grand-exchange",
     "kiln-hut",
     "lodestone-hut",
     "loom-hut",
-    "lumbridge-bobs-axes",
-    "lumbridge-castle",
-    "lumbridge-church",
-    "lumbridge-farm",
-    "lumbridge-general-store",
-    "lumbridge-pub",
-    "lumbridge-smithing",
     "manny-hut",
     "mega-tower",
     "mini-tower",
     "ranged-training",
     "runecrafting-hut",
-    "simple-home",
     "smithing-hut",
     "tannery-hut",
-    "weapons-hut"
+    "weapons-hut",
+    "grand-exchange"
   ]
 }

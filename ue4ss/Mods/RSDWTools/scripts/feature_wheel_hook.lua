@@ -1,6 +1,7 @@
 -- feature_wheel_hook.lua
 --
 -- Round 62: mouse-wheel hotkey support.
+-- Round 65: also route mouse button hotkeys through the same polling path.
 --
 -- DESIGN ROUND 2 -- the original RegisterHook approach failed because
 -- /Script/Engine.PlayerController:InputAxis is a native C++ function,
@@ -32,10 +33,30 @@
 
 local M = {}
 
--- direction "up"/"down" -> array of { mod_fkeys = {fkey...}, fn = function }
-M._cbs = { up = {}, down = {} }
+-- token -> array of { mod_fkeys = {fkey...}, fn = function }
+M._cbs = { up = {}, down = {}, left_mouse = {}, right_mouse = {}, middle_mouse = {} }
 M._generation = 0
 M._loop_started = false
+
+local POLL_ORDER = { "up", "down", "left_mouse", "right_mouse", "middle_mouse" }
+local POLLED_KEY_NAMES = {
+    up = "MouseScrollUp",
+    down = "MouseScrollDown",
+    left_mouse = "LeftMouseButton",
+    right_mouse = "RightMouseButton",
+    middle_mouse = "MiddleMouseButton",
+}
+local TOKEN_ALIASES = {
+    WHEEL_UP = "up",
+    WHEEL_DOWN = "down",
+    LEFT_MOUSE_BUTTON = "left_mouse",
+    RIGHT_MOUSE_BUTTON = "right_mouse",
+    MIDDLE_MOUSE_BUTTON = "middle_mouse",
+}
+
+local function normalize_token(token)
+    return TOKEN_ALIASES[token] or token
+end
 
 -- FName-based UE key lookup. EKeys::MouseScrollUp / MouseScrollDown
 -- are the discrete press events that fire once per wheel notch. The
@@ -65,6 +86,8 @@ local VK_TO_UE_MOD = {
     RIGHT_ALT     = "RightAlt",
 }
 
+local UE_MOD_NAMES = { "LeftControl", "RightControl", "LeftShift", "RightShift", "LeftAlt", "RightAlt" }
+
 local function modifier_fkey_for_token(vk_name)
     local ue_name = VK_TO_UE_MOD[vk_name]
     if not ue_name then return nil end
@@ -81,12 +104,24 @@ local function get_pc()
     return nil
 end
 
-local function modifiers_held(pc, mod_fkeys)
-    if not mod_fkeys or #mod_fkeys == 0 then return true end
+local function modifier_down(pc, ue_name)
+    if not pc or not pc.IsInputKeyDown then return false end
+    local fk = fkey(ue_name)
+    if not fk then return false end
+    local ok, held = pcall(function() return pc:IsInputKeyDown(fk) end)
+    return ok and held == true
+end
+
+local function modifiers_exact(pc, entry)
+    local mod_fkeys = entry.mod_fkeys or {}
+    local mod_set = entry.mod_set or {}
     if not pc or not pc.IsInputKeyDown then return false end
     for _, fk in ipairs(mod_fkeys) do
         local ok, held = pcall(function() return pc:IsInputKeyDown(fk) end)
         if not ok or not held then return false end
+    end
+    for _, ue_name in ipairs(UE_MOD_NAMES) do
+        if not mod_set[ue_name] and modifier_down(pc, ue_name) then return false end
     end
     return true
 end
@@ -94,7 +129,7 @@ end
 local function dispatch(pc, list)
     for _, entry in ipairs(list) do
         if entry.gen == M._generation then
-            if modifiers_held(pc, entry.mod_fkeys) then
+            if (not entry.can_poll or entry.can_poll()) and modifiers_exact(pc, entry) then
                 local ok, err = pcall(entry.fn)
                 if not ok then
                     print("[RSDWTools.wheel] callback error: " .. tostring(err))
@@ -104,21 +139,48 @@ local function dispatch(pc, list)
     end
 end
 
-local KEY_WHEEL_UP, KEY_WHEEL_DOWN
+local _poll_key_cache = {}
+
+local function poll_key(token)
+    local cached = _poll_key_cache[token]
+    if cached then return cached end
+    local key_name = POLLED_KEY_NAMES[token]
+    if not key_name then return nil end
+    local fk = fkey(key_name)
+    _poll_key_cache[token] = fk
+    return fk
+end
+
+local function has_enabled_entry(list)
+    for _, entry in ipairs(list) do
+        if entry.gen == M._generation and (not entry.can_poll or entry.can_poll()) then return true end
+    end
+    return false
+end
+
+local function has_bindings()
+    for _, token in ipairs(POLL_ORDER) do
+        if has_enabled_entry(M._cbs[token]) then return true end
+    end
+    return false
+end
 
 local function tick()
-    if #M._cbs.up == 0 and #M._cbs.down == 0 then
+    if not has_bindings() then
         return -- registry empty ; cheapest possible path
     end
-    KEY_WHEEL_UP   = KEY_WHEEL_UP   or fkey("MouseScrollUp")
-    KEY_WHEEL_DOWN = KEY_WHEEL_DOWN or fkey("MouseScrollDown")
-    if not KEY_WHEEL_UP or not KEY_WHEEL_DOWN then return end
     local pc = get_pc()
     if not pc or not pc.WasInputKeyJustPressed then return end
-    local ok_u, up = pcall(function() return pc:WasInputKeyJustPressed(KEY_WHEEL_UP) end)
-    if ok_u and up and #M._cbs.up > 0 then dispatch(pc, M._cbs.up) end
-    local ok_d, dn = pcall(function() return pc:WasInputKeyJustPressed(KEY_WHEEL_DOWN) end)
-    if ok_d and dn and #M._cbs.down > 0 then dispatch(pc, M._cbs.down) end
+    for _, token in ipairs(POLL_ORDER) do
+        local list = M._cbs[token]
+        if has_enabled_entry(list) then
+            local key = poll_key(token)
+            if key then
+                local ok, pressed = pcall(function() return pc:WasInputKeyJustPressed(key) end)
+                if ok and pressed then dispatch(pc, list) end
+            end
+        end
+    end
 end
 
 local POLL_MS = 4   -- ~250Hz. WasInputKeyJustPressed is true for
@@ -148,36 +210,46 @@ end
 
 function M.bump_generation()
     M._generation = M._generation + 1
-    M._cbs.up = {}
-    M._cbs.down = {}
+    for _, token in ipairs(POLL_ORDER) do M._cbs[token] = {} end
 end
 
--- direction:    "up" or "down"
+-- direction:    "up", "down", WHEEL_*, or *_MOUSE_BUTTON
 -- mod_tokens:   array of VK-style modifier names ("LEFT_CONTROL" etc)
 -- callback:     zero-arg function fired on each matching wheel notch
-function M.register(direction, mod_tokens, callback)
-    if direction ~= "up" and direction ~= "down" then return end
+-- can_poll:     optional zero-arg predicate checked before polling the key
+function M.register(direction, mod_tokens, callback, can_poll)
+    direction = normalize_token(direction)
+    if not POLLED_KEY_NAMES[direction] then return end
     if type(callback) ~= "function" then return end
     -- Translate VK-style modifier tokens to UE FKey structs once at
     -- register time. Unknown tokens are silently skipped (defensive ;
     -- the picker only emits the six we recognize).
     local mod_fkeys = {}
+    local mod_set = {}
     if type(mod_tokens) == "table" then
         for _, name in ipairs(mod_tokens) do
             local fk = modifier_fkey_for_token(name)
-            if fk then mod_fkeys[#mod_fkeys + 1] = fk end
+            local ue_name = VK_TO_UE_MOD[name]
+            if fk and ue_name and not mod_set[ue_name] then
+                mod_fkeys[#mod_fkeys + 1] = fk
+                mod_set[ue_name] = true
+            end
         end
     end
     table.insert(M._cbs[direction], {
         mod_fkeys = mod_fkeys,
+        mod_set   = mod_set,
         fn        = callback,
+        can_poll  = type(can_poll) == "function" and can_poll or nil,
         gen       = M._generation,
     })
     ensure_loop()
 end
 
 function M.binding_count()
-    return #M._cbs.up + #M._cbs.down
+    local count = 0
+    for _, token in ipairs(POLL_ORDER) do count = count + #M._cbs[token] end
+    return count
 end
 
 return M

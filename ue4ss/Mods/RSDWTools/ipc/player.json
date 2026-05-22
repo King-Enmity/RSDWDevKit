@@ -2,6 +2,238 @@
   "version": 5,
   "folders": [
     {
+      "name": "Fly Mode",
+      "mods": [
+        {
+          "name": "Fly Mode",
+          "class": "CharacterMovementComponent",
+          "reach_spec": "pawn.CharacterMovement",
+          "field": "MovementMode",
+          "value": "5",
+          "type": "int32",
+          "ue_type": "EMovementMode",
+          "kind": "set",
+          "value_off": "2"
+        },
+        {
+          "name": "MaxFlySpeed",
+          "class": "CharacterMovementComponent",
+          "reach_spec": "pawn.CharacterMovement",
+          "field": "MaxFlySpeed",
+          "value": "6000.0",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set",
+          "value_off": "600"
+        },
+        {
+          "name": "BrakingDecelerationFlying",
+          "class": "CharacterMovementComponent",
+          "reach_spec": "pawn.CharacterMovement",
+          "field": "BrakingDecelerationFlying",
+          "value": "999999.0",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set",
+          "value_off": "10000"
+        },
+        {
+          "name": "bActorEnableCollision",
+          "class": "BP_PlayerCharacter_C",
+          "reach_spec": "pawn",
+          "field": "bActorEnableCollision",
+          "value": "false",
+          "type": "bool",
+          "ue_type": "boolean",
+          "note": "inherited from AActor",
+          "kind": "set",
+          "value_off": "true"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Fly Mode: Enabled",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "value_off": "Fly Mode: Disabled",
+          "umg_duration": "2",
+          "umg_off_duration": "2"
+        }
+      ],
+      "color": "#C04FB0"
+    },
+    {
+      "name": "Walk Speed (x10)",
+      "mods": [
+        {
+          "name": "Walk Speed (x10)",
+          "class": "CharacterMovementComponent",
+          "reach_spec": "pawn.CharacterMovement",
+          "field": "MaxWalkSpeed",
+          "value": "4500.0",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set",
+          "value_off": "450.0"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Walk Speed (x10)",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "value_off": "Walk Speed: Default",
+          "umg_duration": "2",
+          "umg_off_duration": "2"
+        }
+      ],
+      "color": "#5A8C5A"
+    },
+    {
+      "name": "Jump Height (2x)",
+      "mods": [
+        {
+          "name": "JumpZVelocity",
+          "class": "CharacterMovementComponent",
+          "reach_spec": "pawn.CharacterMovement",
+          "field": "JumpZVelocity",
+          "value": "840",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set",
+          "value_off": "420"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Jump Height (2x)",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "color": "#5A8C5A"
+    },
+    {
+      "name": "Jump Count (Multi-Jump)",
+      "mods": [
+        {
+          "name": "JumpMaxCount",
+          "class": "BP_PlayerCharacter_C",
+          "reach_spec": "pawn",
+          "field": "JumpMaxCount",
+          "value": "3",
+          "type": "int32",
+          "ue_type": "int32",
+          "note": "inherited from ACharacter",
+          "kind": "set",
+          "value_off": "1"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Jump Count is now 3",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "color": "#5A8C5A"
+    },
+    {
+      "name": "Half Gravity",
+      "mods": [
+        {
+          "name": "GravityScale",
+          "class": "CharacterMovementComponent",
+          "reach_spec": "pawn.CharacterMovement",
+          "field": "GravityScale",
+          "value": ".5",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Half Gravity, Default is 1",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "color": "#5A8C5A"
+    },
+    {
+      "name": "Better Air Control",
+      "mods": [
+        {
+          "name": "AirControl",
+          "class": "CharacterMovementComponent",
+          "reach_spec": "pawn.CharacterMovement",
+          "field": "AirControl",
+          "value": "1.0",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Better Air Control, Default .25",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "color": "#5A8C5A"
+    },
+    {
+      "name": "Teleport to Reticle Actor",
+      "mods": [
+        {
+          "name": "Teleport",
+          "class": "CheatManager",
+          "reach_spec": "controller.CheatManager",
+          "field": "Teleport",
+          "value": "",
+          "type": "call",
+          "ue_type": "()",
+          "kind": "call"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Teleport",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "color": "#4F8FE0"
+    },
+    {
       "name": "Respawn Faster",
       "mods": [
         {
@@ -26,7 +258,8 @@
           "umg_duration": "2"
         }
       ],
-      "author": "Hi im Tat"
+      "author": "Hi im Tat",
+      "color": "#9E9E9E"
     },
     {
       "name": "Remove All Fog from Map",
@@ -53,219 +286,9 @@
           "umg_duration": "2"
         }
       ],
-      "author": "Hi im Tat"
+      "author": "Hi im Tat",
+      "color": "#9E9E9E"
     }
   ],
-  "kits": [
-    {
-      "name": "Movement Kit",
-      "folders": [
-        {
-          "name": "StartUp",
-          "mods": [
-            {
-              "name": "On-screen text",
-              "class": "",
-              "reach_spec": "",
-              "field": "",
-              "value": "Movement Kit: Active",
-              "type": "",
-              "ue_type": "",
-              "kind": "umg",
-              "value_off": "Movement Kit: Disabled",
-              "umg_duration": "3",
-              "umg_off_duration": "3"
-            }
-          ],
-          "hotkey_mode": "toggle",
-          "color": "#E0C04F"
-        },
-        {
-          "name": "Fly Mode",
-          "mods": [
-            {
-              "name": "Fly Mode",
-              "class": "CharacterMovementComponent",
-              "reach_spec": "pawn.CharacterMovement",
-              "field": "MovementMode",
-              "value": "5",
-              "type": "int32",
-              "ue_type": "EMovementMode",
-              "kind": "set",
-              "value_off": "2"
-            },
-            {
-              "name": "MaxFlySpeed",
-              "class": "CharacterMovementComponent",
-              "reach_spec": "pawn.CharacterMovement",
-              "field": "MaxFlySpeed",
-              "value": "6000.0",
-              "type": "float",
-              "ue_type": "float",
-              "kind": "set",
-              "value_off": "600"
-            },
-            {
-              "name": "BrakingDecelerationFlying",
-              "class": "CharacterMovementComponent",
-              "reach_spec": "pawn.CharacterMovement",
-              "field": "BrakingDecelerationFlying",
-              "value": "999999.0",
-              "type": "float",
-              "ue_type": "float",
-              "kind": "set",
-              "value_off": "10000"
-            },
-            {
-              "name": "bActorEnableCollision",
-              "class": "BP_PlayerCharacter_C",
-              "reach_spec": "pawn",
-              "field": "bActorEnableCollision",
-              "value": "false",
-              "type": "bool",
-              "ue_type": "boolean",
-              "note": "inherited from AActor",
-              "kind": "set",
-              "value_off": "true"
-            },
-            {
-              "name": "On-screen text",
-              "class": "",
-              "reach_spec": "",
-              "field": "",
-              "value": "Fly Mode: Enabled",
-              "type": "",
-              "ue_type": "",
-              "kind": "umg",
-              "value_off": "Fly Mode: Disabled",
-              "umg_duration": "2",
-              "umg_off_duration": "2"
-            }
-          ],
-          "hotkey": "F1",
-          "hotkey_mode": "toggle",
-          "color": "#C04FB0"
-        },
-        {
-          "name": "Walk Speed (x10)",
-          "mods": [
-            {
-              "name": "Walk Speed (x10)",
-              "class": "CharacterMovementComponent",
-              "reach_spec": "pawn.CharacterMovement",
-              "field": "MaxWalkSpeed",
-              "value": "4500.0",
-              "type": "float",
-              "ue_type": "float",
-              "kind": "set",
-              "value_off": "450.0"
-            },
-            {
-              "name": "On-screen text",
-              "class": "",
-              "reach_spec": "",
-              "field": "",
-              "value": "Walk Speed: x10",
-              "type": "",
-              "ue_type": "",
-              "kind": "umg",
-              "value_off": "Walk Speed: Default",
-              "umg_duration": "2",
-              "umg_off_duration": "2"
-            }
-          ],
-          "hotkey": "F2",
-          "hotkey_mode": "toggle",
-          "color": "#5A8C5A"
-        },
-        {
-          "name": "Teleport to Reticle Actor",
-          "mods": [
-            {
-              "name": "Teleport",
-              "class": "CheatManager",
-              "reach_spec": "controller.CheatManager",
-              "field": "Teleport",
-              "value": "",
-              "type": "call",
-              "ue_type": "()",
-              "kind": "call"
-            },
-            {
-              "name": "On-screen text",
-              "class": "",
-              "reach_spec": "",
-              "field": "",
-              "value": "Teleported",
-              "type": "",
-              "ue_type": "",
-              "kind": "umg",
-              "umg_duration": "3"
-            }
-          ],
-          "hotkey": "F3",
-          "hotkey_mode": "set",
-          "color": "#4F8FE0"
-        },
-        {
-          "name": "Additional Movement Settings",
-          "mods": [
-            {
-              "name": "JumpZVelocity",
-              "class": "CharacterMovementComponent",
-              "reach_spec": "pawn.CharacterMovement",
-              "field": "JumpZVelocity",
-              "value": "420",
-              "type": "float",
-              "ue_type": "float",
-              "kind": "set",
-              "value_off": "420"
-            },
-            {
-              "name": "GravityScale",
-              "class": "CharacterMovementComponent",
-              "reach_spec": "pawn.CharacterMovement",
-              "field": "GravityScale",
-              "value": ".5",
-              "type": "float",
-              "ue_type": "float",
-              "kind": "set"
-            },
-            {
-              "name": "AirControl",
-              "class": "CharacterMovementComponent",
-              "reach_spec": "pawn.CharacterMovement",
-              "field": "AirControl",
-              "value": "0.25",
-              "type": "float",
-              "ue_type": "float",
-              "kind": "set"
-            },
-            {
-              "name": "JumpMaxCount",
-              "class": "BP_PlayerCharacter_C",
-              "reach_spec": "pawn",
-              "field": "JumpMaxCount",
-              "value": "1",
-              "type": "int32",
-              "ue_type": "int32",
-              "note": "inherited from ACharacter",
-              "kind": "set",
-              "value_off": "1"
-            }
-          ],
-          "color": "#E0584F"
-        }
-      ],
-      "hotkey": "INS",
-      "modifiers": [
-        "LEFT_ALT"
-      ],
-      "startup_folder": "StartUp",
-      "author": "Hi im Tat",
-      "show_apply_all": false,
-      "color": "#7B5FE0",
-      "sub_kits": []
-    }
-  ]
+  "kits": []
 }
