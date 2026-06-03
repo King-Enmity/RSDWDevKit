@@ -13,6 +13,8 @@ local feature_ui = require("feature_ui")
 local OCULUS_GE_CLASS = "/Game/Gameplay/GameplayEffects/PerksV2/GE_PerkV2_Construction_Oculus.GE_PerkV2_Construction_Oculus_C"
 local Visibility_VISIBLE = 0
 local Visibility_COLLAPSED = 1
+local Visibility_SELF_HIT_TEST_INVISIBLE = 4
+local watermark_visible = nil
 
 local MODE_NAMES = {
     [0] = "None",
@@ -338,7 +340,7 @@ end
 local function set_widget_visual_state(widget, visible)
     if not is_valid(widget) then return false end
     local changed = false
-    local visibility = visible and Visibility_VISIBLE or Visibility_COLLAPSED
+    local visibility = visible and Visibility_SELF_HIT_TEST_INVISIBLE or Visibility_COLLAPSED
     local opacity = visible and 1.0 or 0.0
 
     local ok_vis = pcall(function() widget:SetVisibility(visibility) end)
@@ -350,6 +352,24 @@ local function set_widget_visual_state(widget, visible)
     end)
     if ok_set_opacity then changed = true end
     return changed
+end
+
+local function read_widget_visible(widget)
+    if not is_valid(widget) then return nil end
+    local visibility = read_field(widget, "Visibility")
+    if type(visibility) == "number" then
+        return visibility == Visibility_VISIBLE or visibility == 3 or visibility == 4
+    end
+    local opacity = read_field(widget, "RenderOpacity")
+    if type(opacity) == "number" then return opacity > 0.01 end
+    return nil
+end
+
+local function current_watermark_visible()
+    local gi_widget = feature_field.resolve_root("gameinstance.WatermarkWidget")
+    local visible = read_widget_visible(gi_widget)
+    if visible ~= nil then return visible end
+    return watermark_visible
 end
 
 local function force_oculus_vignette_widget(visible)
@@ -608,12 +628,19 @@ end
 
 function M.watermark(args_text)
     local args = split_args(args_text)
-    local visible = parse_onoff(args[1] or "off")
+    local mode = trim(args[1] or "off"):lower()
+    local visible = nil
+    if mode == "toggle" then
+        visible = not (current_watermark_visible() == true)
+    else
+        visible = parse_onoff(mode)
+    end
     if visible == nil then
-        return false, "usage: camera.oculus.watermark <off|on>"
+        return false, "usage: camera.oculus.watermark <off|on|toggle>"
     end
 
     local ok, detail = force_watermark_widget(visible)
+    watermark_visible = visible
     if ok then return true, tostring(detail) end
     return true, "watermark unchanged: " .. tostring(detail)
 end

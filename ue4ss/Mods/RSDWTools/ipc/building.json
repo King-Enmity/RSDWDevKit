@@ -2,6 +2,32 @@
   "version": 5,
   "folders": [
     {
+      "name": "Building Settings",
+      "mods": [
+        {
+          "name": "MaxHeightModifier",
+          "class": "BuildPlacementComponent",
+          "reach_spec": "controller.BuildPlacementComponent",
+          "field": "MaxHeightModifier",
+          "value": "3000.0",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        },
+        {
+          "name": "MaxPlacementDistance",
+          "class": "BuildPlacementComponent",
+          "reach_spec": "controller.BuildPlacementComponent",
+          "field": "MaxPlacementDistance",
+          "value": "7000.0",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        }
+      ],
+      "color": "#E0C04F"
+    },
+    {
       "name": "Clear All Dropped Items",
       "mods": [
         {
@@ -13,9 +39,19 @@
           "type": "",
           "ue_type": "",
           "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "All Dropped Items Cleared",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#4F8FE0"
     },
     {
@@ -31,9 +67,19 @@
           "ue_type": "(bValue: boolean)",
           "note": "inherited from ADominionPlayerCharacter",
           "kind": "call"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Damage To Buildings: Enabled",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#E0584F"
     },
     {
@@ -50,7 +96,7 @@
           "kind": "raw"
         }
       ],
-      "author": "Hi im Tat"
+      "color": "#A07050"
     },
     {
       "name": "Force Place Previewed Building Piece",
@@ -66,7 +112,7 @@
           "kind": "raw"
         }
       ],
-      "author": "Hi im Tat"
+      "color": "#A07050"
     },
     {
       "name": "Remove Stability (Buildings will collapse on Reload)",
@@ -93,90 +139,78 @@
           "umg_duration": "3"
         }
       ],
-      "author": "Hi im Tat"
-    }
-  ],
-  "kits": [
+      "color": "#A07050"
+    },
     {
-      "name": "Free Building Kit",
-      "folders": [
+      "name": "Enable Free Build Mode (Legacy, this is automatically handled by Oculus and Build Service)",
+      "mods": [
         {
-          "name": "Free Build Mode (Turn off if using Build Service)",
-          "mods": [
-            {
-              "name": "Store Building Reqs",
-              "class": "",
-              "reach_spec": "",
-              "field": "",
-              "value": "world.buildings.requirements save",
-              "type": "",
-              "ue_type": "",
-              "kind": "raw",
-              "value_off": "world.buildings.requirements status"
-            },
-            {
-              "name": "Modify Building Reqs",
-              "class": "",
-              "reach_spec": "",
-              "field": "",
-              "value": "world.buildings.requirements clear",
-              "type": "",
-              "ue_type": "",
-              "kind": "raw",
-              "value_off": "world.buildings.requirements restore"
-            },
-            {
-              "name": "On-screen text",
-              "class": "",
-              "reach_spec": "",
-              "field": "",
-              "value": "Free Build: Enabled",
-              "type": "",
-              "ue_type": "",
-              "kind": "umg",
-              "value_off": "Free Build: Disabled",
-              "umg_duration": "2",
-              "umg_off_duration": "2"
-            }
-          ],
-          "hotkey_mode": "toggle",
-          "color": "#A07050"
+          "name": "Store Building Reqs",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.buildings.requirements save",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw",
+          "value_off": "world.buildings.requirements status"
         },
         {
-          "name": "Additional Building Settings",
-          "mods": [
-            {
-              "name": "MaxHeightModifier",
-              "class": "BuildPlacementComponent",
-              "reach_spec": "controller.BuildPlacementComponent",
-              "field": "MaxHeightModifier",
-              "value": "3000.0",
-              "type": "float",
-              "ue_type": "float",
-              "kind": "set"
-            },
-            {
-              "name": "MaxPlacementDistance",
-              "class": "BuildPlacementComponent",
-              "reach_spec": "controller.BuildPlacementComponent",
-              "field": "MaxPlacementDistance",
-              "value": "7000.0",
-              "type": "float",
-              "ue_type": "float",
-              "kind": "set"
-            }
-          ],
-          "color": "#E0584F"
+          "name": "Modify Building Reqs",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.buildings.requirements clear",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw",
+          "value_off": "world.buildings.requirements restore"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Free Build: Enabled",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "value_off": "Free Build: Disabled",
+          "umg_duration": "2",
+          "umg_off_duration": "2"
         }
       ],
-      "hotkey": "B",
-      "modifiers": [
-        "LEFT_ALT"
+      "color": "#9E9E9E"
+    },
+    {
+      "name": "Disable Free Build Mode (Legacy, this is automatically handled by Oculus and Build Service)",
+      "mods": [
+        {
+          "name": "Restore Building Reqs",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "world.buildings.requirements restore",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw",
+          "value_off": "world.buildings.requirements status"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Free Build: Disabled",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "value_off": "Free Build: Disabled",
+          "umg_duration": "2"
+        }
       ],
-      "startup_folder": "Free Build Mode (Turn off if using Build Service)",
-      "author": "Hi im Tat, rachaelx",
-      "color": "#7B5FE0",
-      "sub_kits": []
+      "color": "#9E9E9E"
     }
-  ]
+  ],
+  "kits": []
 }

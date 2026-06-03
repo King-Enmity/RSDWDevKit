@@ -2,146 +2,6 @@
   "version": 5,
   "folders": [
     {
-      "name": "Cant Touch Me",
-      "mods": [
-        {
-          "name": "bCanTakeDamage",
-          "class": "PlayerDamageComponent",
-          "reach_spec": "pawn.PlayerDamageComponent",
-          "field": "bCanTakeDamage",
-          "value": "false",
-          "type": "bool",
-          "ue_type": "boolean",
-          "note": "inherited from UDamageComponent",
-          "kind": "set"
-        },
-        {
-          "name": "On-screen text",
-          "class": "",
-          "reach_spec": "",
-          "field": "",
-          "value": "Cant Touch Me: Active",
-          "type": "",
-          "ue_type": "",
-          "kind": "umg",
-          "umg_duration": "2"
-        }
-      ],
-      "author": "Hi im Tat",
-      "color": "#7B5FE0"
-    },
-    {
-      "name": "Cant Die",
-      "mods": [
-        {
-          "name": "bCanDie",
-          "class": "PlayerHealthComponent",
-          "reach_spec": "pawn.HealthComponent",
-          "field": "bCanDie",
-          "value": "false",
-          "type": "bool",
-          "ue_type": "boolean",
-          "note": "inherited from UHealthComponent",
-          "kind": "set"
-        },
-        {
-          "name": "On-screen text",
-          "class": "",
-          "reach_spec": "",
-          "field": "",
-          "value": "Cant Die: Active",
-          "type": "",
-          "ue_type": "",
-          "kind": "umg",
-          "umg_duration": "2"
-        }
-      ],
-      "author": "Hi im Tat",
-      "color": "#7B5FE0"
-    },
-    {
-      "name": "Cant Receive Damage",
-      "mods": [
-        {
-          "name": "Invulnerable",
-          "class": "",
-          "reach_spec": "",
-          "field": "",
-          "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Effects/GE_Invulnerable.GE_Invulnerable_C",
-          "type": "",
-          "ue_type": "",
-          "kind": "raw"
-        },
-        {
-          "name": "On-screen text",
-          "class": "",
-          "reach_spec": "",
-          "field": "",
-          "value": "Cant Receive Damage: Active",
-          "type": "",
-          "ue_type": "",
-          "kind": "umg",
-          "umg_duration": "3"
-        }
-      ],
-      "author": "Hi im Tat",
-      "color": "#7B5FE0"
-    },
-    {
-      "name": "Refill Health",
-      "mods": [
-        {
-          "name": "Increase Health",
-          "class": "",
-          "reach_spec": "",
-          "field": "",
-          "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Effects/GE_ModifyHealth_Increase.GE_ModifyHealth_Increase_C Data.AmountToModify.Value 99.0",
-          "type": "",
-          "ue_type": "",
-          "kind": "raw"
-        },
-        {
-          "name": "Apply Health",
-          "class": "",
-          "reach_spec": "",
-          "field": "",
-          "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Effects/GE_ModifyHealth_Increase.GE_ModifyHealth_Increase_C",
-          "type": "",
-          "ue_type": "",
-          "kind": "raw"
-        }
-      ],
-      "author": "Hi im Tat",
-      "color": "#C04FB0"
-    },
-    {
-      "name": "Refill VitalShield",
-      "mods": [
-        {
-          "name": "Rate to Refill",
-          "class": "",
-          "reach_spec": "",
-          "field": "",
-          "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Buffs/GE_WardFruit.GE_WardFruit_C Data.PeriodicInterval.Value 0.01",
-          "type": "",
-          "ue_type": "",
-          "kind": "raw"
-        },
-        {
-          "name": "Apply Refill",
-          "class": "",
-          "reach_spec": "",
-          "field": "",
-          "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Buffs/GE_WardFruit.GE_WardFruit_C",
-          "type": "",
-          "ue_type": "",
-          "kind": "raw"
-        }
-      ],
-      "author": "Hi im Tat",
-      "color": "#C04FB0"
-    },
-    {
       "name": "Infinite Stamina",
       "mods": [
         {
@@ -166,18 +26,17 @@
           "umg_duration": "2"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#E0C04F"
     },
     {
-      "name": "Pause AI",
+      "name": "Infinite Lock-On Distance",
       "mods": [
         {
-          "name": "Pause AI",
+          "name": "player.lockon 999999",
           "class": "",
           "reach_spec": "",
           "field": "",
-          "value": "world.foreach DominionAICharacter set CustomTimeDilation 0",
+          "value": "player.lockon 999999",
           "type": "",
           "ue_type": "",
           "kind": "raw"
@@ -187,25 +46,34 @@
           "class": "",
           "reach_spec": "",
           "field": "",
-          "value": "Nearby AI: Paused",
+          "value": "Infinite Lock-On Distance: On",
           "type": "",
           "ue_type": "",
           "kind": "umg",
-          "umg_duration": "2"
+          "umg_duration": "3"
         }
       ],
-      "author": "Hi im Tat",
-      "color": "#5A8C5A"
+      "color": "#A07050"
     },
     {
-      "name": "Unpause AI",
+      "name": "Easy Parry",
       "mods": [
         {
-          "name": "Unpause AI",
+          "name": "player.parrywindow 99999",
           "class": "",
           "reach_spec": "",
           "field": "",
-          "value": "world.foreach DominionAICharacter set CustomTimeDilation 1.0",
+          "value": "player.parrywindow 99999",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "player.blockangle 360",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.blockangle 360",
           "type": "",
           "ue_type": "",
           "kind": "raw"
@@ -215,43 +83,14 @@
           "class": "",
           "reach_spec": "",
           "field": "",
-          "value": "Nearby AI: Play",
+          "value": "Easy Parry: On",
           "type": "",
           "ue_type": "",
           "kind": "umg",
-          "umg_duration": "2"
+          "umg_duration": "3"
         }
       ],
-      "author": "Hi im Tat",
-      "color": "#5A8C5A"
-    },
-    {
-      "name": "Delete All AI",
-      "mods": [
-        {
-          "name": "Bye",
-          "class": "",
-          "reach_spec": "",
-          "field": "",
-          "value": "world.foreach DominionAICharacter call K2_DestroyActor 1",
-          "type": "",
-          "ue_type": "",
-          "kind": "raw"
-        },
-        {
-          "name": "On-screen text",
-          "class": "",
-          "reach_spec": "",
-          "field": "",
-          "value": "All Nearby AI Destroyed",
-          "type": "",
-          "ue_type": "",
-          "kind": "umg",
-          "umg_duration": "2"
-        }
-      ],
-      "author": "Hi im Tat",
-      "color": "#5A8C5A"
+      "color": "#7FBF45"
     }
   ],
   "kits": [
@@ -293,7 +132,6 @@
               "umg_duration": "3"
             }
           ],
-          "author": "Hi im Tat",
           "color": "#E0584F"
         },
         {
@@ -331,7 +169,6 @@
               "umg_duration": "3"
             }
           ],
-          "author": "Hi im Tat",
           "color": "#E0584F"
         },
         {
@@ -369,7 +206,6 @@
               "umg_duration": "3"
             }
           ],
-          "author": "Hi im Tat",
           "color": "#E0584F"
         },
         {
@@ -407,7 +243,6 @@
               "umg_duration": "3"
             }
           ],
-          "author": "Hi im Tat",
           "color": "#E0584F"
         },
         {
@@ -445,7 +280,6 @@
               "umg_duration": "3"
             }
           ],
-          "author": "Hi im Tat",
           "color": "#E0584F"
         },
         {
@@ -483,12 +317,592 @@
               "umg_duration": "3"
             }
           ],
-          "author": "Hi im Tat",
           "color": "#E0584F"
         }
       ],
       "show_apply_all": false,
-      "color": "#9E9E9E",
+      "color": "#E0584F",
+      "sub_kits": []
+    },
+    {
+      "name": "Invincible Modes",
+      "folders": [
+        {
+          "name": "Cant Touch Me",
+          "mods": [
+            {
+              "name": "bCanTakeDamage",
+              "class": "PlayerDamageComponent",
+              "reach_spec": "pawn.PlayerDamageComponent",
+              "field": "bCanTakeDamage",
+              "value": "false",
+              "type": "bool",
+              "ue_type": "boolean",
+              "note": "inherited from UDamageComponent",
+              "kind": "set"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Cant Touch Me: Active",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "2"
+            }
+          ],
+          "color": "#7B5FE0"
+        },
+        {
+          "name": "Cant Die",
+          "mods": [
+            {
+              "name": "bCanDie",
+              "class": "PlayerHealthComponent",
+              "reach_spec": "pawn.HealthComponent",
+              "field": "bCanDie",
+              "value": "false",
+              "type": "bool",
+              "ue_type": "boolean",
+              "note": "inherited from UHealthComponent",
+              "kind": "set"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Cant Die: Active",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "2"
+            }
+          ],
+          "color": "#7B5FE0"
+        },
+        {
+          "name": "Cant Receive Damage",
+          "mods": [
+            {
+              "name": "Invulnerable",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Effects/GE_Invulnerable.GE_Invulnerable_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Cant Receive Damage: Active",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "3"
+            }
+          ],
+          "color": "#7B5FE0"
+        }
+      ],
+      "show_apply_all": false,
+      "color": "#7B5FE0",
+      "sub_kits": []
+    },
+    {
+      "name": "Health \u0026 Shields",
+      "folders": [
+        {
+          "name": "Refill Health",
+          "mods": [
+            {
+              "name": "Increase Health",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Effects/GE_ModifyHealth_Increase.GE_ModifyHealth_Increase_C Data.AmountToModify.Value 99.0",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Apply Health",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Effects/GE_ModifyHealth_Increase.GE_ModifyHealth_Increase_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Refill Health: Active",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "3"
+            }
+          ],
+          "color": "#C04FB0"
+        },
+        {
+          "name": "Refill VitalShield",
+          "mods": [
+            {
+              "name": "Rate to Refill",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.cdo.set /Game/Gameplay/GameplayEffects/Buffs/GE_WardFruit.GE_WardFruit_C Data.PeriodicInterval.Value 0.01",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Apply Refill",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.apply /Game/Gameplay/GameplayEffects/Buffs/GE_WardFruit.GE_WardFruit_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Refill VitalShield: Active",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "3"
+            }
+          ],
+          "color": "#C04FB0"
+        }
+      ],
+      "show_apply_all": false,
+      "color": "#C04FB0",
+      "sub_kits": []
+    },
+    {
+      "name": "Combat Service Examples",
+      "folders": [
+        {
+          "name": "AOE Fire Spell (Must have Fire Runes Equipped)",
+          "mods": [
+            {
+              "name": "Combo 4",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform magic primary combo4 reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            }
+          ],
+          "color": "#E0584F"
+        },
+        {
+          "name": "Rapid Fire Bow (Must have Bow Equipped)",
+          "mods": [
+            {
+              "name": "Pew 1",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform bow full reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Delay",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": ".05",
+              "type": "",
+              "ue_type": "",
+              "kind": "delay"
+            },
+            {
+              "name": "Pew 2",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform bow full reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Delay",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": ".05",
+              "type": "",
+              "ue_type": "",
+              "kind": "delay"
+            },
+            {
+              "name": "Pew 3",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform bow full reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Delay",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": ".05",
+              "type": "",
+              "ue_type": "",
+              "kind": "delay"
+            },
+            {
+              "name": "Pew 4",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform bow full reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Delay",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": ".05",
+              "type": "",
+              "ue_type": "",
+              "kind": "delay"
+            },
+            {
+              "name": "Pew 5",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform bow full reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            }
+          ],
+          "color": "#5A8C5A"
+        },
+        {
+          "name": "Combo Bypass (Trigger Anything in Any Order)",
+          "mods": [
+            {
+              "name": "Combo 1",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform current combo1 reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Combo 2",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform current combo2 reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Combo 3",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform current combo3 reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Combo 4",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform current combo4 reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Combo 5",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform current combo5 reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Combo 6",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform current combo6 reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Combo 7",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform current combo7 reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Combo 8",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform current combo8 reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Special",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform current special reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Secondary",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform current secondary reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            }
+          ],
+          "show_apply_all": false,
+          "color": "#7B5FE0"
+        },
+        {
+          "name": "Surge Triggers (Experimental)",
+          "mods": [
+            {
+              "name": "Forward",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.anim.montage /Game/Art/Animation/PlayerM/Dodge/AM_PlayerM_Dodge_Surge_Fwd.AM_PlayerM_Dodge_Surge_Fwd",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Back",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.anim.montage /Game/Art/Animation/PlayerM/Dodge/AM_PlayerM_Dodge_Surge_Bck.AM_PlayerM_Dodge_Surge_Bck",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Left",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.anim.montage /Game/Art/Animation/PlayerM/Dodge/AM_PlayerM_Dodge_Surge_Lf.AM_PlayerM_Dodge_Surge_Lf",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Right",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.anim.montage /Game/Art/Animation/PlayerM/Dodge/AM_PlayerM_Dodge_Surge_Rt.AM_PlayerM_Dodge_Surge_Rt",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            }
+          ],
+          "show_apply_all": false,
+          "color": "#4F8FE0"
+        },
+        {
+          "name": "Zipline Attack (Lock on -\u003E Activate)",
+          "mods": [
+            {
+              "name": "LockOnDistance",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.lockon 999999",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Greatsword",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.attack.perform greatsword combo4 reset",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "EnableSurge",
+              "class": "BP_Components_Evade_C",
+              "reach_spec": "pawn.BP_Components_Evade",
+              "field": "EnableSurge",
+              "value": "true",
+              "type": "call",
+              "ue_type": "(bEnable: boolean)",
+              "note": "inherited from UPlayerEvadeComponent",
+              "kind": "call"
+            },
+            {
+              "name": "Delay",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": ".25",
+              "type": "",
+              "ue_type": "",
+              "kind": "delay"
+            },
+            {
+              "name": "Surge Forward",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.anim.montage /Game/Art/Animation/PlayerM/Dodge/AM_PlayerM_Dodge_Surge_Fwd.AM_PlayerM_Dodge_Surge_Fwd",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Teleport",
+              "class": "CheatManager",
+              "reach_spec": "controller.CheatManager",
+              "field": "Teleport",
+              "value": "",
+              "type": "call",
+              "ue_type": "()",
+              "kind": "call"
+            },
+            {
+              "name": "Shock Effect",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "world.spawn.safe /Game/Gameplay/GameplayEffects/Equipment/StatusEffectArrows/ShockArrows/BP_ShockArrowsExplosion.BP_ShockArrowsExplosion_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "DisableSurge",
+              "class": "BP_Components_Evade_C",
+              "reach_spec": "pawn.BP_Components_Evade",
+              "field": "EnableSurge",
+              "value": "false",
+              "type": "call",
+              "ue_type": "(bEnable: boolean)",
+              "note": "inherited from UPlayerEvadeComponent",
+              "kind": "call"
+            }
+          ],
+          "color": "#3FA3A3"
+        },
+        {
+          "name": "Acrobatic Escape",
+          "mods": [
+            {
+              "name": "Tempest Explosion",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "world.spawn.safe /Game/Gameplay/UtilityMagic/PerkSpells/TempestShield/BP_TempestShieldExplosion.BP_TempestShieldExplosion_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Windstep",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.ge.apply /Game/Gameplay/UtilityMagic/PerkSpells/Windstep/GE_Windstep.GE_Windstep_C",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Roll Back",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "player.anim.montage /Game/Art/Animation/PlayerM/Dodge/AM_PlayerM_Dodge_Roll_Bck.AM_PlayerM_Dodge_Roll_Bck",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "Jump",
+              "class": "DominionPlayerCharacter",
+              "reach_spec": "pawn",
+              "field": "Jump",
+              "value": "",
+              "type": "call",
+              "ue_type": "()",
+              "note": "inherited from ACharacter",
+              "kind": "call"
+            }
+          ],
+          "color": "#9E9E9E"
+        }
+      ],
+      "show_apply_all": false,
       "sub_kits": []
     }
   ]

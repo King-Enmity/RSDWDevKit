@@ -244,11 +244,12 @@ local function write_json_atomic(body)
     return true, out_path
 end
 
-function M.run_scan(query, mode)
+function M.run_scan(query, mode, accept_entry)
     local needle = trim(query)
     if needle == "" then
         return false, "usage: scan <name_part> [radius|all]"
     end
+    local accept = type(accept_entry) == "function" and accept_entry or nil
 
     local use_all = false
     local radius = DEFAULT_RADIUS
@@ -333,6 +334,12 @@ function M.run_scan(query, mode)
             local short = short_name_from_full(full)
             if not short or short == "" then
                 return
+            end
+            if accept then
+                local ok_accept, accepted = pcall(accept, short, full, obj)
+                if not ok_accept or not accepted then
+                    return
+                end
             end
 
             if radius_sq then

@@ -36,7 +36,6 @@
           "umg_duration": "2"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#A07050"
     },
     {
@@ -64,8 +63,34 @@
           "umg_duration": "3"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#A07050"
+    },
+    {
+      "name": "No Durability Loss",
+      "mods": [
+        {
+          "name": "No Duarbility Loss",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.durabilityloss on",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "No Durability Loss: On",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "color": "#E0C04F"
     },
     {
       "name": "All Items - Cannot be Destroyed",
@@ -92,7 +117,6 @@
           "umg_duration": "3"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#E0C04F"
     },
     {
@@ -130,7 +154,6 @@
           "umg_duration": "3"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#E0C04F"
     },
     {
@@ -158,7 +181,6 @@
           "umg_duration": "3"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#4F8FE0"
     },
     {
@@ -186,7 +208,6 @@
           "umg_duration": "3"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#4F8FE0"
     },
     {
@@ -214,7 +235,6 @@
           "umg_duration": "3"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#E0584F"
     },
     {
@@ -242,8 +262,60 @@
           "umg_duration": "3"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#7B5FE0"
+    },
+    {
+      "name": "Magnet Radius (Auto-Pickup All)",
+      "mods": [
+        {
+          "name": "Very Large Radius",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.magnet 999999",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Magnet Radius: 999999",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "color": "#5A8C5A"
+    },
+    {
+      "name": "Magnet Radius (Never Pickup)",
+      "mods": [
+        {
+          "name": "No Radius",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.magnet 0",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Magnet Radius: 0",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg"
+        }
+      ],
+      "color": "#5A8C5A"
     }
   ],
   "kits": []

@@ -2,9 +2,9 @@
 --
 -- Round 36: in-game hotkey activation for user-authored mods.
 --
--- Reads <Win64>\ue4ss\Mods\RSDWTools\ipc\mods.json (the same file the WPF
--- "Mods" tab edits) and registers every kit + folder hotkey via
--- RegisterKeyBindAsync. Hotkey semantics:
+-- Reads the user-authored Mod document files under
+-- <Win64>\ue4ss\Mods\RSDWTools\ipc\ and registers every kit + folder
+-- hotkey via RegisterKeyBindAsync. Hotkey semantics:
 --
 --   * Folder hotkey, mode "set"    : on press, fires every mod row in
 --     the folder via command_line_router (same as the WPF "Apply All").
@@ -233,8 +233,10 @@ local _last_gamepad_buttons = 0
 local _gamepad_loop_started = false
 local _gamepad_log_enabled = false
 local GAMEPAD_POLL_MS = 16  -- ~60Hz, well below human chord-detect threshold
+local HOTKEY_INTER_SEND_DELAY_SECONDS = 0.05
 local _oculus_reserved_chords = {}
 local _oculus_hotkeys_world_ready = false
+local _hotkey_delay_fallback_logged = false
 
 -- bit index -> UE-style FKey name. MUST stay in sync with the table in
 -- RSDWToolsUE4SS/dllmain.cpp::lua_gamepad_button_names. Bits 10/11 are
@@ -284,7 +286,7 @@ end
 -- schema today) but we keep it parameterized for forward compat.
 
 local function build_verb(mod, override_value)
-    local kind  = mod.kind  or "set"
+    local kind  = tostring(mod.kind or "set"):lower()
     local reach = mod.reach_spec or "player"
     local field = mod.field or ""
     local value = override_value
@@ -297,11 +299,8 @@ local function build_verb(mod, override_value)
         if value == nil or value == "" then return nil end
         return value
     end
-    -- Round 56: "delay" rows are WPF-only pauses inserted between
-    -- sends in the .exe Apply-All loop. They have no IPC verb. On the
-    -- hotkey path we do not have a free `sleep`, so we silently skip
-    -- them and dispatch the remaining rows back-to-back. Folder Apply
-    -- via the .exe button is the canonical place to honor delays.
+    -- Round 56: "delay" rows have no IPC verb. Folder/kit hotkey
+    -- sequence helpers interpret them before calling build_verb.
     if kind == "delay" then
         return nil
     end
@@ -482,6 +481,99 @@ local function safe_dispatch(line)
     return ok == true
 end
 
+local function mod_kind(mod)
+    return tostring((mod and mod.kind) or "set"):lower()
+end
+
+local function delay_row_seconds(mod)
+    if mod_kind(mod) ~= "delay" then return nil end
+    local seconds = tonumber(mod and mod.value)
+    if not seconds or seconds <= 0 then seconds = 1.0 end
+    return seconds
+end
+
+local function add_delay_step(steps, seconds)
+    seconds = tonumber(seconds) or 0
+    if seconds > 0 then steps[#steps + 1] = { delay = seconds } end
+end
+
+local function add_dispatch_step(steps, line)
+    if not line or line == "" then return end
+    steps[#steps + 1] = { line = line }
+    add_delay_step(steps, HOTKEY_INTER_SEND_DELAY_SECONDS)
+end
+
+local function build_row_sequence(rows, off_press)
+    local steps = {}
+    for _, m in ipairs(rows or {}) do
+        local delay_seconds = delay_row_seconds(m)
+        if delay_seconds then
+            add_delay_step(steps, delay_seconds)
+        elseif off_press then
+            local off = m.value_off
+            if off ~= nil and off ~= "" then
+                add_dispatch_step(steps, build_verb(m, off))
+            else
+                local kind = mod_kind(m)
+                if kind == "raw" or kind == "call" then
+                    add_dispatch_step(steps, build_verb(m, nil))
+                end
+            end
+        else
+            add_dispatch_step(steps, build_verb(m, nil))
+        end
+    end
+    return steps
+end
+
+local function invoke_hotkey_delay_callback(fn)
+    local ok, err = pcall(fn)
+    if not ok then
+        print("[RSDWTools.hotkeys] delayed sequence failed: " .. tostring(err))
+    end
+end
+
+local function schedule_hotkey_delay(seconds, fn)
+    local ms = math.floor(((tonumber(seconds) or 0) * 1000) + 0.5)
+    if ms < 1 then invoke_hotkey_delay_callback(fn); return end
+    if not LoopAsync then
+        if not _hotkey_delay_fallback_logged then
+            print("[RSDWTools.hotkeys] LoopAsync unavailable -- delay rows collapse on hotkey path.")
+            _hotkey_delay_fallback_logged = true
+        end
+        invoke_hotkey_delay_callback(fn)
+        return
+    end
+    local ok, err = pcall(function()
+        LoopAsync(ms, function()
+            invoke_hotkey_delay_callback(fn)
+            return true
+        end)
+    end)
+    if not ok then
+        print("[RSDWTools.hotkeys] delay schedule failed: " .. tostring(err))
+        invoke_hotkey_delay_callback(fn)
+    end
+end
+
+local function start_hotkey_sequence(steps)
+    if type(steps) ~= "table" or #steps == 0 then return false end
+    local seq_gen = _generation
+    local function run_step(index)
+        if _generation ~= seq_gen then return end
+        local step = steps[index]
+        if not step then return end
+        if step.delay then
+            schedule_hotkey_delay(step.delay, function() run_step(index + 1) end)
+            return
+        end
+        if step.line then safe_dispatch(step.line) end
+        run_step(index + 1)
+    end
+    run_step(1)
+    return true
+end
+
 local _oculus_world_gate_blocked_logged = false
 
 local function oculus_hotkeys_world_ready()
@@ -538,21 +630,9 @@ local function fire_startup_folder(kit_name, kit, on_arm, label)
         kit_name, on_arm and "ARM ->" or "DISARM ->", target_name, #rows,
         label and (" "..label) or ""))
     if on_arm then
-        for _, m in ipairs(rows) do
-            safe_dispatch(build_verb(m, nil))
-        end
+        start_hotkey_sequence(build_row_sequence(rows, false))
     else
-        for _, m in ipairs(rows) do
-            local off = m.value_off
-            if off ~= nil and off ~= "" then
-                safe_dispatch(build_verb(m, off))
-            else
-                local kind = m.kind or "set"
-                if kind == "raw" or kind == "call" then
-                    safe_dispatch(build_verb(m, nil))
-                end
-            end
-        end
+        start_hotkey_sequence(build_row_sequence(rows, true))
     end
 end
 
@@ -659,9 +739,7 @@ local function make_folder_callback(kit_name, folder_index, folder, my_gen)
             local state = _folder_state[fid] or 0
             if state == 0 then
                 -- ON press: send each row's Value
-                for _, m in ipairs(mods_list) do
-                    safe_dispatch(build_verb(m, nil))
-                end
+                start_hotkey_sequence(build_row_sequence(mods_list, false))
                 _folder_state[fid] = 1
             else
                 -- OFF press: send each row's ValueOff. If ValueOff is
@@ -671,24 +749,12 @@ local function make_folder_callback(kit_name, folder_index, folder, my_gen)
                 -- cleanly. For "set" kinds we still skip on blank
                 -- because firing the same write twice would not
                 -- restore the original field value.
-                for _, m in ipairs(mods_list) do
-                    local off = m.value_off
-                    if off ~= nil and off ~= "" then
-                        safe_dispatch(build_verb(m, off))
-                    else
-                        local kind = m.kind or "set"
-                        if kind == "raw" or kind == "call" then
-                            safe_dispatch(build_verb(m, nil))
-                        end
-                    end
-                end
+                start_hotkey_sequence(build_row_sequence(mods_list, true))
                 _folder_state[fid] = 0
             end
         else
             -- "set" mode: always fire the on-values.
-            for _, m in ipairs(mods_list) do
-                safe_dispatch(build_verb(m, nil))
-            end
+            start_hotkey_sequence(build_row_sequence(mods_list, false))
         end
     end
 end
@@ -711,6 +777,61 @@ local function register_folder_hotkey(kit_name, folder_index, folder, key_token,
         print(string.format("[RSDWTools.hotkeys] folder '%s/%s' bind failed: %s",
             kit_name, folder.name or "?", tostring(err)))
     end
+end
+
+local function camera_roll_step_text(feature_camera)
+    local step = 5.0
+    if feature_camera.rig_roll_step_value then
+        local ok, value = pcall(function() return feature_camera.rig_roll_step_value() end)
+        local parsed = ok and tonumber(value) or nil
+        if parsed ~= nil then step = parsed end
+    end
+    return tostring(step)
+end
+
+local function make_camera_roll_callback(my_gen, action)
+    return function()
+        if _generation ~= my_gen then return end
+        local ok_require, feature_camera = pcall(require, "feature_camera")
+        if not ok_require or not feature_camera then return end
+        if feature_camera.is_debug_camera_active and not feature_camera.is_debug_camera_active() then return end
+        local ok_call, ok_action, detail = pcall(action, feature_camera)
+        if not ok_call then
+            print("[RSDWTools.hotkeys] camera roll hotkey crash: " .. tostring(ok_action))
+        elseif ok_action == false and tostring(detail or "") ~= "DebugCamera is not active" then
+            print("[RSDWTools.hotkeys] camera roll hotkey failed: " .. tostring(detail))
+        end
+    end
+end
+
+local function register_camera_roll_hotkey(name, key_name, my_gen, action)
+    local key_const = resolve_key(key_name)
+    if key_const == nil then
+        print("[RSDWTools.hotkeys] camera roll key '" .. tostring(key_name) .. "' unavailable; " .. tostring(name) .. " skipped.")
+        return 0
+    end
+    local ok, err = pcall(function()
+        RegisterKeyBindAsync(key_const, make_camera_roll_callback(my_gen, action))
+    end)
+    if not ok then
+        print("[RSDWTools.hotkeys] camera roll '" .. tostring(name) .. "' bind failed: " .. tostring(err))
+        return 0
+    end
+    return 1
+end
+
+local function register_camera_roll_hotkeys(my_gen)
+    local count = 0
+    count = count + register_camera_roll_hotkey("left", "ONE", my_gen, function(feature_camera)
+        return feature_camera.rig_roll_add("-" .. camera_roll_step_text(feature_camera))
+    end)
+    count = count + register_camera_roll_hotkey("reset", "TWO", my_gen, function(feature_camera)
+        return feature_camera.rig_roll_reset()
+    end)
+    count = count + register_camera_roll_hotkey("right", "THREE", my_gen, function(feature_camera)
+        return feature_camera.rig_roll_add(camera_roll_step_text(feature_camera))
+    end)
+    return count
 end
 
 -- =========================================================================
@@ -847,24 +968,14 @@ local function register_folder_gamepad_hotkey(kit_name, folder_index, folder, tr
         if mode == "toggle" then
             local state = _folder_state[fid] or 0
             if state == 0 then
-                for _, m in ipairs(mods_list) do safe_dispatch(build_verb(m, nil)) end
+                start_hotkey_sequence(build_row_sequence(mods_list, false))
                 _folder_state[fid] = 1
             else
-                for _, m in ipairs(mods_list) do
-                    local off = m.value_off
-                    if off ~= nil and off ~= "" then
-                        safe_dispatch(build_verb(m, off))
-                    else
-                        local kind = m.kind or "set"
-                        if kind == "raw" or kind == "call" then
-                            safe_dispatch(build_verb(m, nil))
-                        end
-                    end
-                end
+                start_hotkey_sequence(build_row_sequence(mods_list, true))
                 _folder_state[fid] = 0
             end
         else
-            for _, m in ipairs(mods_list) do safe_dispatch(build_verb(m, nil)) end
+            start_hotkey_sequence(build_row_sequence(mods_list, false))
         end
     end
 end
@@ -1040,11 +1151,11 @@ local function read_mods_json()
     return read_json_doc("mods.json")
 end
 
--- Round 49: Camera tab is now a second Mods document. We register hotkeys
--- from BOTH ipc/mods.json and ipc/camera.json in one pass so a single
+-- Round 49+: every user-created section is a Mods document. We register
+-- hotkeys from each ipc/*.json section in one pass so a single
 -- "rsdwt_hotkeys_reload" call rebinds everything. Kit names are scoped
 -- with the file label to keep the gate (_kit_enabled) state from
--- colliding when both files happen to use the same kit name.
+-- colliding when multiple files happen to use the same kit name.
 local function register_doc(doc, scope_label, my_gen)
     if not doc then return 0, 0, 0 end
     local kits = doc.kits or {}
@@ -1202,41 +1313,43 @@ function M.load_and_register()
     local ok_wh, wh = pcall(require, "feature_wheel_hook")
     if ok_wh and wh then wh.bump_generation() end
 
-    local mods_doc,       merr  = read_json_doc("mods.json")
-    local camera_doc,     cerr  = read_json_doc("camera.json")
-    local building_doc,   berr  = read_json_doc("building.json")
-    local player_doc,     perr  = read_json_doc("player.json")
-    local essentials_doc, eerr  = read_json_doc("essentials.json")
+    local section_specs = {
+        { label = "mods",       file = "mods.json" },
+        { label = "camera",     file = "camera.json" },
+        { label = "building",   file = "building.json" },
+        { label = "player",     file = "player.json" },
+        { label = "essentials", file = "essentials.json" },
+        { label = "items",      file = "Items.json" },
+        { label = "combat",     file = "Combat.json" },
+        { label = "survival",   file = "Survival.json" },
+        { label = "spells",     file = "Spells.json" },
+        { label = "world",      file = "World.json" },
+    }
+    local loaded_sections = {}
+    for _, spec in ipairs(section_specs) do
+        local doc, err = read_json_doc(spec.file)
+        if not doc then
+            print("[RSDWTools.hotkeys] no " .. spec.file .. " (" .. tostring(err) .. ").")
+        end
+        loaded_sections[#loaded_sections + 1] = { label = spec.label, file = spec.file, doc = doc }
+    end
+
     local oculus_doc,     oerr  = read_json_doc("oculus.json")
-    if not mods_doc then
-        print("[RSDWTools.hotkeys] no mods.json (" .. tostring(merr) .. ").")
-    end
-    if not camera_doc then
-        print("[RSDWTools.hotkeys] no camera.json (" .. tostring(cerr) .. ").")
-    end
-    if not building_doc then
-        print("[RSDWTools.hotkeys] no building.json (" .. tostring(berr) .. ").")
-    end
-    if not player_doc then
-        print("[RSDWTools.hotkeys] no player.json (" .. tostring(perr) .. ").")
-    end
-    if not essentials_doc then
-        print("[RSDWTools.hotkeys] no essentials.json (" .. tostring(eerr) .. ").")
-    end
     if not oculus_doc then
         print("[RSDWTools.hotkeys] no oculus.json (" .. tostring(oerr) .. ").")
     end
 
     local reserved = reserve_oculus_hotkeys(oculus_doc)
     local oc = register_oculus_doc(oculus_doc, my_gen)
-    local mk, mf, mt = register_doc(mods_doc,       "mods",       my_gen)
-    local ck, cf, ct = register_doc(camera_doc,     "camera",     my_gen)
-    local bk, bf, bt = register_doc(building_doc,   "building",   my_gen)
-    local pk, pf, pt = register_doc(player_doc,     "player",     my_gen)
-    local ek, ef, et = register_doc(essentials_doc, "essentials", my_gen)
+    local summary_parts = {}
+    for _, section in ipairs(loaded_sections) do
+        local k, f, t = register_doc(section.doc, section.label, my_gen)
+        summary_parts[#summary_parts + 1] = string.format("%s(k=%d f=%d t=%d)", section.label, k, f, t)
+    end
+    local camera_roll_fixed = register_camera_roll_hotkeys(my_gen)
 
-    print(string.format("[RSDWTools.hotkeys] gen=%d mods(k=%d f=%d t=%d) camera(k=%d f=%d t=%d) building(k=%d f=%d t=%d) player(k=%d f=%d t=%d) essentials(k=%d f=%d t=%d) oculus=%d reserved=%d gp_chords=%d registered.",
-        my_gen, mk, mf, mt, ck, cf, ct, bk, bf, bt, pk, pf, pt, ek, ef, et,
+    print(string.format("[RSDWTools.hotkeys] gen=%d %s roll=%d oculus=%d reserved=%d gp_chords=%d registered.",
+        my_gen, table.concat(summary_parts, " "), camera_roll_fixed,
         oc, reserved,
         (function() local n=0 for _ in pairs(_gamepad_dispatch) do n=n+1 end return n end)()))
 

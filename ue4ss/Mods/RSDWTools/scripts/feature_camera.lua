@@ -18,6 +18,7 @@ local LOOKAT_ACTOR_NAME = nil
 local PLAY = { active = false, id = 0, handle = nil, driver = nil, step_fn = nil, engine_tick_started = false }
 local STREAMING_SNAPSHOT = { sources = {}, grids = {}, grid_objects = {} }
 local LOD_SNAPSHOT = { components = {} }
+local ROLL_STATE = { key = nil, requested = nil, step = 5.0 }
 
 local function is_valid(obj)
     if type(obj) ~= "userdata" then return false end
@@ -93,6 +94,16 @@ end
 local function label(obj)
     if not is_valid(obj) then return "nil" end
     return class_name(obj) .. ":" .. object_name(obj)
+end
+
+local function object_key(obj)
+    if not is_valid(obj) then return nil end
+    return tostring(obj)
+end
+
+local function clear_roll_state()
+    ROLL_STATE.key = nil
+    ROLL_STATE.requested = nil
 end
 
 local function is_debug_controller(pc)
@@ -335,6 +346,26 @@ local function debug_active()
     return false, debug_pc
 end
 
+local function camera_manager_for(pc)
+    local pcm = read_field(pc, "PlayerCameraManager")
+    if is_valid(pcm) then return pcm end
+    return nil
+end
+
+local function repair_widened_roll_bounds(pc)
+    local pcm = camera_manager_for(pc)
+    if not is_valid(pcm) then return false, "no PlayerCameraManager" end
+    local min_v = tonumber(read_field(pcm, "ViewRollMin"))
+    local max_v = tonumber(read_field(pcm, "ViewRollMax"))
+    if not (min_v and max_v and min_v <= -179.9 and max_v >= 179.9) then
+        return true, string.format("unchanged [%s,%s]", tostring(min_v or "?"), tostring(max_v or "?"))
+    end
+    local ok_min, err_min = write_field(pcm, "ViewRollMin", -89.9)
+    local ok_max, err_max = write_field(pcm, "ViewRollMax", 89.9)
+    if ok_min and ok_max then return true, "repaired [-180,180] -> [-89.9,89.9]" end
+    return false, "repair failed min=" .. tostring(err_min) .. " max=" .. tostring(err_max)
+end
+
 local function short_status()
     local active = debug_active()
     local _, detail = M.status()
@@ -422,33 +453,36 @@ end
 function M.disable()
     local active, debug_pc = debug_active()
     if not active then
+        clear_roll_state()
         local _, detail = M.status()
         return true, "already inactive; " .. tostring(detail)
     end
+    repair_widened_roll_bounds(debug_pc)
 
     local pc, _, orig = resolve_controllers()
     local attempts = {}
 
     local orig_cm = get_cheat_manager(orig or pc)
     local ok_o, detail_o = direct_disable_via(orig_cm, "original CheatManager.DisableDebugCamera")
-    if ok_o then return true, detail_o end
+    if ok_o then clear_roll_state(); return true, detail_o end
     attempts[#attempts + 1] = detail_o
 
     local debug_cm = get_cheat_manager(debug_pc)
     local ok_d, detail_d = direct_disable_via(debug_cm, "debug CheatManager.DisableDebugCamera")
-    if ok_d then return true, detail_d end
+    if ok_d then clear_roll_state(); return true, detail_d end
     attempts[#attempts + 1] = detail_d
 
     local ok_ct, detail_ct = console_disable_via(debug_pc, "ToggleDebugCamera", "debug controller ToggleDebugCamera")
-    if ok_ct then return true, detail_ct end
+    if ok_ct then clear_roll_state(); return true, detail_ct end
     attempts[#attempts + 1] = detail_ct
 
     local ok_cd, detail_cd = console_disable_via(debug_pc, "DisableDebugCamera", "debug controller DisableDebugCamera")
-    if ok_cd then return true, detail_cd end
+    if ok_cd then clear_roll_state(); return true, detail_cd end
     attempts[#attempts + 1] = detail_cd
 
     local ok_force, detail_force = M.force_restore()
     if ok_force then
+        clear_roll_state()
         return true, "force_restore fallback after engine disable failed; " .. tostring(detail_force)
     end
     attempts[#attempts + 1] = "force_restore: " .. tostring(detail_force)
@@ -460,10 +494,12 @@ function M.force_restore()
     local pc, _, orig = resolve_controllers()
     if not active then
         local cleared = clear_debug_refs(true)
+        clear_roll_state()
         local _, detail = M.status()
         return true, "already inactive; cleared_refs=" .. tostring(cleared) .. "; " .. tostring(detail)
     end
     if not is_valid(debug_pc) then return false, "no DebugCamera controller" end
+    repair_widened_roll_bounds(debug_pc)
     if not is_valid(orig) then orig = pc end
     if not is_valid(orig) then return false, "no original player controller" end
 
@@ -513,6 +549,7 @@ function M.force_restore()
 
     if feature_net.invalidate_cache then pcall(function() feature_net.invalidate_cache() end) end
     local _, detail = M.status()
+    clear_roll_state()
     return true, table.concat(steps, " ") .. "; " .. tostring(detail)
 end
 
@@ -1363,6 +1400,7 @@ local function ensure_debug_camera(speed_arg)
     end
     local active2, debug_pc = debug_active()
     if not active2 or not is_valid(debug_pc) then return nil, "DebugCamera did not become active" end
+    repair_widened_roll_bounds(debug_pc)
     return debug_pc
 end
 
@@ -1436,10 +1474,12 @@ local function apply_lookat_if_needed(pose)
     if not feature_actor.is_valid_object(actor) then return pose end
     local loc = feature_actor.actor_location(actor)
     if not loc then return pose end
+    local rot = rotation_looking_at(pose.loc, loc)
+    rot.Roll = tonumber(pose.rot and pose.rot.Roll) or 0
     return {
         source = pose.source,
         loc = pose.loc,
-        rot = rotation_looking_at(pose.loc, loc),
+        rot = rot,
         fov = pose.fov,
     }
 end
@@ -1876,9 +1916,45 @@ local function lerp_pose(a, b, t, opts)
     }
 end
 
+local function current_debug_camera_pose()
+    local active, debug_pc = debug_active()
+    if not active or not is_valid(debug_pc) then return nil, nil, "DebugCamera is not active" end
+    local pose, err = read_camera_pose(debug_pc, "DebugCamera")
+    if not pose then return nil, nil, err end
+    return pose, debug_pc
+end
+
+local function set_live_camera_roll(roll)
+    roll = tonumber(roll)
+    if not roll then return false, "usage: camera.rig.roll.set <degrees>" end
+    roll = normalize_angle_delta(roll)
+    local pose, debug_pc, err = current_debug_camera_pose()
+    if not pose then return false, err end
+    local repaired, repair_detail = repair_widened_roll_bounds(debug_pc)
+    if not repaired then return false, tostring(repair_detail) end
+    pose.rot.Roll = roll
+    local ok, detail = apply_pose(debug_pc, apply_lookat_if_needed(pose))
+    if not ok then return false, detail end
+    ROLL_STATE.key = object_key(debug_pc)
+    ROLL_STATE.requested = roll
+    local after = read_camera_pose(debug_pc, "DebugCamera")
+    local actual = after and after.rot and tonumber(after.rot.Roll) or nil
+    if actual == nil then
+        return true, string.format("requested=%.1f readback=? via %s; %s", roll, tostring(detail), tostring(repair_detail))
+    end
+    return true, string.format("requested=%.1f readback=%.1f via %s; %s", roll, actual, tostring(detail), tostring(repair_detail))
+end
+
+local function current_roll_step()
+    local step = tonumber(ROLL_STATE.step) or 5.0
+    if step <= 0 then return 5.0 end
+    return step
+end
+
 local function cancel_playback_loop()
     -- Playback stop is cooperative. The engine-tick driver is a single
     -- permanent loop and is intentionally never cancelled in Shipping.
+    PLAY.id = (tonumber(PLAY.id) or 0) + 1
     PLAY.step_fn = nil
     PLAY.driver = nil
 end
@@ -2060,7 +2136,7 @@ end
 function M.rig_stop()
     PLAY.active = false
     cancel_playback_loop()
-    return M.force_restore()
+    return M.disable()
 end
 
 function M.rig_status()
@@ -2307,6 +2383,62 @@ function M.rig_fov(args)
     if not debug_pc then return false, err end
     set_fov(debug_pc, n)
     return true, string.format("%.1f", n)
+end
+
+function M.is_debug_camera_active()
+    local active = debug_active()
+    return active and true or false
+end
+
+function M.rig_roll_step_value()
+    return current_roll_step()
+end
+
+function M.rig_roll_step(args)
+    local step = tonumber(trim(args))
+    if not step then return false, "usage: camera.rig.roll.step <degrees>" end
+    step = math.abs(step)
+    if step < 0.1 then step = 0.1 end
+    if step > 180.0 then step = 180.0 end
+    ROLL_STATE.step = step
+    return true, string.format("%.3g", step)
+end
+
+function M.rig_roll_add(args)
+    local delta = tonumber(trim(args))
+    if not delta then return false, "usage: camera.rig.roll.add <degrees>" end
+    local pose, debug_pc, err = current_debug_camera_pose()
+    if not pose then return false, err end
+    local base = tonumber(pose.rot.Roll) or 0
+    if ROLL_STATE.key ~= nil and ROLL_STATE.key == object_key(debug_pc) and ROLL_STATE.requested ~= nil then
+        base = ROLL_STATE.requested
+    end
+    return set_live_camera_roll(base + delta)
+end
+
+function M.rig_roll_set(args)
+    return set_live_camera_roll(tonumber(trim(args)))
+end
+
+function M.rig_roll_reset()
+    return set_live_camera_roll(0)
+end
+
+function M.rig_roll_status()
+    local active, debug_pc = debug_active()
+    local step = current_roll_step()
+    if not active or not is_valid(debug_pc) then return true, string.format("active=false step=%.3g", step) end
+    local pose = read_camera_pose(debug_pc, "DebugCamera")
+    local pcm = camera_manager_for(debug_pc)
+    local min_v = is_valid(pcm) and tonumber(read_field(pcm, "ViewRollMin")) or nil
+    local max_v = is_valid(pcm) and tonumber(read_field(pcm, "ViewRollMax")) or nil
+    local roll = pose and pose.rot and tonumber(pose.rot.Roll) or 0
+    local requested = nil
+    if ROLL_STATE.key ~= nil and ROLL_STATE.key == object_key(debug_pc) then requested = ROLL_STATE.requested end
+    if requested ~= nil then
+        return true, string.format("active=true roll=%.1f requested=%.1f step=%.3g bounds=[%s,%s]", roll, requested, step, tostring(min_v or "?"), tostring(max_v or "?"))
+    end
+    return true, string.format("active=true roll=%.1f step=%.3g bounds=[%s,%s]", roll, step, tostring(min_v or "?"), tostring(max_v or "?"))
 end
 
 function M.fps(args)

@@ -1340,4 +1340,18 @@ function M.clear()
     return true, string.format("cleared %d watch(es)", n)
 end
 
+function M.describe_actor(actor, explicit_expr)
+    if not is_valid(actor) then return nil, false, nil, "invalid actor" end
+    local expr = explicit_expr
+    if not expr or expr == "" then
+        local hits = discover_health(actor)
+        expr = build_default_expr(actor, hits)
+        if not expr then
+            return nil, false, nil, "no overlay-able fields auto-detected"
+        end
+    end
+    local text, ok = eval_expr(actor, expr)
+    return text, ok, expr, nil
+end
+
 return M

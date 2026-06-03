@@ -16,7 +16,6 @@
           "kind": "call"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#E0C04F"
     },
     {
@@ -33,7 +32,6 @@
           "kind": "raw"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#4F8FE0"
     },
     {
@@ -50,8 +48,34 @@
           "kind": "call"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#4F8FE0"
+    },
+    {
+      "name": "Unlock Mounts",
+      "mods": [
+        {
+          "name": "Unlock Mounts",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.mounts.unlockall on",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "Mounts Unlocked",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "color": "#A07050"
     }
   ],
   "kits": []

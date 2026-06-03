@@ -1,0 +1,83 @@
+{
+  "version": 5,
+  "folders": [
+    {
+      "name": "FOV",
+      "mods": [
+        {
+          "name": "FOV",
+          "class": "DominionPlayerController",
+          "reach_spec": "controller",
+          "field": "FOV",
+          "value": "90",
+          "type": "call",
+          "ue_type": "(NewFOV: float)",
+          "note": "inherited from APlayerController",
+          "kind": "call"
+        }
+      ],
+      "show_apply_all": false,
+      "color": "#4F8FE0"
+    },
+    {
+      "name": "Simple Debug AI (Reticle Target)",
+      "mods": [
+        {
+          "name": "Debug AI",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "debug.watch.snap @",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        }
+      ],
+      "color": "#E08A4F"
+    },
+    {
+      "name": "Detailed Debug AI (Reticle Target)",
+      "mods": [
+        {
+          "name": "NPC Inspect: Reticle",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "npc.inspect.on look nocamera",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        }
+      ],
+      "color": "#A07050"
+    },
+    {
+      "name": "Hide Player Character",
+      "mods": [
+        {
+          "name": "player.invisible on",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.invisible on",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "player.invisible off",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.invisible off",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        }
+      ],
+      "show_apply_all": false,
+      "color": "#E0C04F"
+    }
+  ],
+  "kits": []
+}

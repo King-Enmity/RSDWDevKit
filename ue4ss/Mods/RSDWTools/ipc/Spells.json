@@ -2,6 +2,33 @@
   "version": 5,
   "folders": [
     {
+      "name": "No Cooldowns",
+      "mods": [
+        {
+          "name": "Removes Cooldowns",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "player.spells.zerocooldown on",
+          "type": "",
+          "ue_type": "",
+          "kind": "raw"
+        },
+        {
+          "name": "On-screen text",
+          "class": "",
+          "reach_spec": "",
+          "field": "",
+          "value": "No Cooldowns: On",
+          "type": "",
+          "ue_type": "",
+          "kind": "umg",
+          "umg_duration": "3"
+        }
+      ],
+      "color": "#E0C04F"
+    },
+    {
       "name": "Instant Personal Chest",
       "mods": [
         {
@@ -15,7 +42,6 @@
           "kind": "call"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#2E5A8C"
     },
     {
@@ -32,7 +58,6 @@
           "kind": "raw"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#9E9E9E"
     },
     {
@@ -60,7 +85,6 @@
           "umg_duration": "2"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#7B5FE0"
     },
     {
@@ -111,7 +135,6 @@
           "umg_duration": "2"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#4F8FE0"
     },
     {
@@ -128,7 +151,6 @@
           "kind": "raw"
         }
       ],
-      "author": "Hi im Tat",
       "color": "#9E9E9E"
     }
   ],

@@ -1,7 +1,7 @@
 {
     "_meta":  {
                   "schema":  "rsdwtools.spawn_catalog.v2",
-                  "generatedAt":  "2026-05-22T12:48:25.4338106-10:00",
+                  "generatedAt":  "2026-06-03T00:29:25.5965965-10:00",
                   "counts":  {
                                  "total":  243,
                                  "byCategory":  {
@@ -425,9 +425,9 @@
                         "category":  "Boss",
                         "persistence":  "spud_event",
                         "persistenceSource":  "pattern",
-                        "runtimePath":  "/FutureMajorVersion/Gameplay/World/SoulRift/ImaruEvent/BP_DragonEvent_ImaruBreath.BP_DragonEvent_ImaruBreath_C",
+                        "runtimePath":  "/FutureMajorVersion/Gameplay/World/Soulrift/ImaruEvent/BP_DragonEvent_ImaruBreath.BP_DragonEvent_ImaruBreath_C",
                         "parent":  "\u003carchive\u003e",
-                        "spawnArg":  "/FutureMajorVersion/Gameplay/World/SoulRift/ImaruEvent/BP_DragonEvent_ImaruBreath.BP_DragonEvent_ImaruBreath_C",
+                        "spawnArg":  "/FutureMajorVersion/Gameplay/World/Soulrift/ImaruEvent/BP_DragonEvent_ImaruBreath.BP_DragonEvent_ImaruBreath_C",
                         "saveFields":  [
 
                                        ]

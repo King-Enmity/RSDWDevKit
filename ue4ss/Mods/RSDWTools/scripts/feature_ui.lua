@@ -14,6 +14,9 @@
 --                            -> SetVisibility(0=Visible | 1=Collapsed) on
 --                               the cached ref; "on" restores the original
 --                               visibility we captured at scan time.
+--   ui.widgets.hudroot <on|off>
+--                            -> Directly sets WBP_HUD_RootWidget_C without
+--                               requiring a prior ui.widgets.scan.
 --
 -- Caching note: widget_state is keyed by integer id (1-based, matching the
 -- order of HUDWidgetRefs at scan time). Every scan rebuilds the table, so
@@ -842,6 +845,85 @@ function M.set_widget_vis(args_str)
     local ok2, msg2 = setvis_with_id(id, code)
     if ok2 ~= nil then return ok2, msg2 end
     return false, "unknown id (rescan?): " .. tostring(id)
+end
+
+local function add_hud_root_candidate(out, seen, w)
+    if not is_valid(w) then return end
+    local fn
+    pcall(function() fn = w:GetFullName() end)
+    if type(fn) ~= "string" or #fn == 0 then return end
+    if fn:find("Default__", 1, true) then return end
+    if seen[fn] then return end
+    local cls = widget_class_name(w)
+    if cls ~= "WBP_HUD_RootWidget_C" then return end
+    seen[fn] = true
+    out[#out + 1] = w
+end
+
+local function collect_hud_root_widgets()
+    local out = {}
+    local seen = {}
+
+    local pawn = get_pawn()
+    local hud = pawn and get_player_hud(pawn) or nil
+    local refs
+    if hud then pcall(function() refs = hud.HUDWidgetRefs end) end
+    if refs then
+        local n = 0
+        pcall(function() n = #refs end)
+        for i = 1, n do
+            local w
+            if pcall(function() w = refs[i] end) then
+                add_hud_root_candidate(out, seen, w)
+            end
+        end
+    end
+
+    if FindAllOf then
+        local classes = { "WBP_HUD_RootWidget_C", "HUDRootWidget", "UserWidget" }
+        for _, class_name in ipairs(classes) do
+            local all
+            pcall(function() all = FindAllOf(class_name) end)
+            if type(all) == "table" then
+                for i = 1, #all do
+                    add_hud_root_candidate(out, seen, all[i])
+                end
+            end
+        end
+    end
+
+    return out
+end
+
+function M.set_hud_root(args_str)
+    local mode = tostring(args_str or ""):match("^%s*(%S+)%s*$")
+    if not mode then
+        return false, "usage: ui.widgets.hudroot <on|off>"
+    end
+    mode = mode:lower()
+    local code
+    if mode == "off" or mode == "hide" or mode == "hidden" or mode == "0" or mode == "false" then
+        code = ESlateVisibility_Hidden
+    elseif mode == "on" or mode == "show" or mode == "visible" or mode == "1" or mode == "true" then
+        code = ESlateVisibility_SelfHitTestInvisible
+    else
+        return false, "mode must be on|off"
+    end
+
+    local widgets = collect_hud_root_widgets()
+    if #widgets == 0 then
+        return false, "no live WBP_HUD_RootWidget_C widgets found"
+    end
+
+    local changed, failed = 0, 0
+    for _, widget in ipairs(widgets) do
+        local ok = pcall(function() widget:SetVisibility(code) end)
+        if ok then changed = changed + 1 else failed = failed + 1 end
+    end
+
+    return failed == 0,
+        string.format("%s=%d fail=%d -> %s", mode, changed, failed,
+            visibility_label[code] or tostring(code))
 end
 
 -- ui.widgets.resetall -> restore each cached widget to the visibility we

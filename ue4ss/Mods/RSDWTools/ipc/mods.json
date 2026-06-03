@@ -65,6 +65,7 @@
           "kind": "call"
         }
       ],
+      "show_apply_all": false,
       "color": "#7B5FE0"
     },
     {
@@ -115,7 +116,6 @@
           "kind": "call"
         }
       ],
-      "author": "Hi im Tat",
       "show_apply_all": false,
       "color": "#E0C04F"
     }

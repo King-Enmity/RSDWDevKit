@@ -27,6 +27,7 @@
 --   camera.grab.cancel                  drop and restore start transform
 --   camera.grab.mode <move|rot|z|scale> set what scroll-delta affects
 --   camera.grab.delta <signed_number>   one wheel-tick worth (signed)
+--   camera.grab.safety <on|off|toggle|status> toggle unsafe target blocks
 --   camera.grab.status                  print current state to ack
 --
 -- All verbs run on the game thread (the bridge dispatcher already
@@ -39,6 +40,17 @@ local M = {}
 local feature_actor = require("feature_actor")
 local feature_field = require("feature_field")
 local feature_umg   = require("feature_umg")
+local feature_oculus_transform = require("feature_oculus_transform")
+
+local grab_safety_enabled = true
+
+local function trim(s)
+    return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function grab_safety_label()
+    return grab_safety_enabled and "on" or "off"
+end
 
 -- Trim the engine-assigned `_UAID_<hex>_<num>` runtime suffix off an
 -- actor's instance name so the UI label reads as the editor name
@@ -97,6 +109,20 @@ local DEFAULT_DISTANCE = 300.0
 -- infinity and grab terrain on the horizon by accident.
 local LOOKAT_MAX_DISTANCE = 10000.0
 
+-- Runtime-spawned pickups often do not block the Visibility trace used by
+-- camera.lookat. Scan can still see them because it enumerates actors, so
+-- Oculus picking gets a tiny actor-enumeration pass for these item wrappers.
+local WORLD_ITEM_RAY_RADIUS = 115.0
+local WORLD_ITEM_FORCE_RAY_RADIUS = 220.0
+local WORLD_ITEM_DEPTH_LEEWAY = 175.0
+local WORLD_ITEM_FIND_CLASSES = {
+    "BP_RuntimeSpawnedWorldItem_C",
+    "BP_RuntimeSpawnedWorldItem_NoDelayForMagnet_C",
+    "BP_RuntimeSpawnedWorldItem_ProcessingStation_C",
+    "RuntimeSpawnedWorldItem",
+    "WorldItem",
+}
+
 -- ---------- state ----------
 
 -- Single in-flight grab. We deliberately don't support stacking grabs:
@@ -110,7 +136,7 @@ local grab = nil
 --     orig_rot    = { Pitch, Yaw, Roll }, -- for cancel()
 --     distance    = number,               -- cm in front of camera
 --     z_offset    = number,               -- cm above camera plane
---     yaw_offset  = number,               -- deg added to camera yaw
+--     yaw_offset  = number,               -- deg added to held actor yaw
 --     scale       = number,               -- uniform scalar
 --     mode        = "move" | "rot" | "z" | "scale",
 --     dest        = { X, Y, Z },          -- pre-allocated, mutated in place
@@ -247,6 +273,123 @@ local function build_camera_ray(distance)
         Z = cam_loc.Z + fz * distance,
     }
     return start_v, end_v, { X = fx, Y = fy, Z = fz }, cam_rot, nil
+end
+
+local function ray_projection(start_v, forward, loc)
+    if not start_v or not forward or not loc then return nil, nil end
+    local dx = (loc.X or 0) - (start_v.X or 0)
+    local dy = (loc.Y or 0) - (start_v.Y or 0)
+    local dz = (loc.Z or 0) - (start_v.Z or 0)
+    local along = dx * (forward.X or 0) + dy * (forward.Y or 0) + dz * (forward.Z or 0)
+    local total_sq = dx * dx + dy * dy + dz * dz
+    local perp_sq = total_sq - along * along
+    if perp_sq < 0 then perp_sq = 0 end
+    return along, perp_sq
+end
+
+local function is_world_item_actor(actor)
+    if not feature_actor.is_valid_object(actor) then return false end
+    local cls_name, full_name
+    pcall(function()
+        local cls = actor:GetClass()
+        if cls then
+            if cls.GetFName then
+                local fn = cls:GetFName()
+                if fn and fn.ToString then cls_name = fn:ToString() end
+            end
+            if not cls_name and cls.GetName then cls_name = cls:GetName() end
+        end
+    end)
+    pcall(function() full_name = actor:GetFullName() end)
+    local hay = ((cls_name or "") .. " " .. (full_name or "")):lower()
+    return hay:find("runtimespawnedworlditem", 1, true) ~= nil
+        or hay:find("bp_runtimespawnedworlditem", 1, true) ~= nil
+end
+
+local function enumerate_world_item_actors()
+    if not FindAllOf then return {} end
+    local out, seen = {}, {}
+
+    local function add(actor)
+        if not is_world_item_actor(actor) then return end
+        local key = feature_actor.short_name_of(actor)
+        if not key or key == "" then key = tostring(actor) end
+        if seen[key] then return end
+        seen[key] = true
+        out[#out + 1] = actor
+    end
+
+    local function scan_class(class_name)
+        local ok, list = pcall(FindAllOf, class_name)
+        if not ok or type(list) ~= "table" then return end
+        for _, actor in ipairs(list) do
+            add(actor)
+        end
+    end
+
+    for _, class_name in ipairs(WORLD_ITEM_FIND_CLASSES) do
+        scan_class(class_name)
+    end
+
+    -- Some UE4SS builds only accept "Actor"/"AActor" for broad live-object
+    -- walks. If the targeted class scans yielded nothing, fall back once.
+    if #out == 0 then
+        local ok, actors = pcall(function()
+            local list = FindAllOf("Actor")
+            if type(list) ~= "table" then list = FindAllOf("AActor") end
+            return list
+        end)
+        if ok and type(actors) == "table" then
+            for _, actor in ipairs(actors) do
+                add(actor)
+            end
+        end
+    end
+
+    return out
+end
+
+local function pick_world_item_candidate(opts)
+    opts = opts or {}
+    local radius = opts.radius or (opts.force and WORLD_ITEM_FORCE_RAY_RADIUS or WORLD_ITEM_RAY_RADIUS)
+    local start_v, _end_v, forward, _cam_rot, ray_err = build_camera_ray(opts.distance or LOOKAT_MAX_DISTANCE)
+    if not start_v then return nil, nil, nil, tostring(ray_err) end
+
+    local trace_along = nil
+    if opts.trace_impact then
+        trace_along = select(1, ray_projection(start_v, forward, opts.trace_impact))
+    end
+
+    local best = nil
+    local radius_sq = radius * radius
+    for _, actor in ipairs(enumerate_world_item_actors()) do
+        local loc = feature_actor.actor_location(actor)
+        if loc then
+            local along, perp_sq = ray_projection(start_v, forward, loc)
+            if along and along > 0 and along <= (opts.distance or LOOKAT_MAX_DISTANCE) and perp_sq <= radius_sq then
+                if opts.force
+                    or not trace_along
+                    or along <= trace_along + WORLD_ITEM_DEPTH_LEEWAY then
+                    local score = perp_sq + along * 0.05
+                    if not best or score < best.score then
+                        best = {
+                            actor = actor,
+                            loc = loc,
+                            along = along,
+                            perp = math.sqrt(perp_sq),
+                            score = score,
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    if best then
+        local source = opts.force and "trace.item.force" or "trace.item"
+        return best.actor, best.loc, source, nil, best
+    end
+    return nil, nil, nil, "no runtime world item near reticle", nil
 end
 
 local function _trace_from_camera(distance)
@@ -535,9 +678,10 @@ local function tick_grab()
     g.dest.Y = (cam_loc.Y or 0) + fy * g.distance
     g.dest.Z = (cam_loc.Z or 0) + fz * g.distance + g.z_offset
 
-    g.rot.Pitch = 0
-    g.rot.Yaw = (cam_rot and cam_rot.Yaw or 0) + g.yaw_offset
-    g.rot.Roll = 0
+    local held_rotation = g.fixed_rotation or g.orig_rot or { Pitch = 0, Yaw = 0, Roll = 0 }
+    g.rot.Pitch = held_rotation.Pitch or 0
+    g.rot.Yaw = ((held_rotation.Yaw or 0) + g.yaw_offset) % 360.0
+    g.rot.Roll = held_rotation.Roll or 0
 
     local moved = feature_actor.move_actor(actor, g.dest)
     if moved == false then
@@ -635,7 +779,8 @@ end
 -- pair. All public M.start* entries funnel through here so the static-
 -- class block, transform seeding and grab-state allocation only live
 -- in one place. Returns the same (ok, detail) tuple as M.start.
-local function _begin_grab(actor, picked_name)
+local function _begin_grab(actor, picked_name, options)
+    options = options or {}
     -- Round 62+: forbid grabbing world-static / foliage / building-piece
     -- actors. These are engine-owned placement/world objects; moving them
     -- outside their native systems can desync collision, nav, placement or
@@ -659,16 +804,19 @@ local function _begin_grab(actor, picked_name)
         if hay:find("staticmeshactor", 1, true)
             or hay:find("instancedfoliageactor", 1, true)
             or hay:find("landscapestreamingproxy", 1, true)
+            or hay:find("landscapeproxy", 1, true)
             or hay:find("bpp_", 1, true) then
             return "world-static/environment", cls_name or full_name or "<unknown>"
         end
         return nil
     end
-    local blocked_kind, blocked_detail = _grab_block_reason(actor)
-    if blocked_kind then
-        return false, string.format(
-            "refusing to grab '%s' : target is %s (%s) and is unsafe to move with camera.grab",
-            tostring(picked_name), tostring(blocked_kind), tostring(blocked_detail))
+    if grab_safety_enabled then
+        local blocked_kind, blocked_detail = _grab_block_reason(actor)
+        if blocked_kind then
+            return false, string.format(
+                "refusing to grab '%s' : target is %s (%s) and is unsafe to move with camera.grab ; use camera.grab.safety off to bypass",
+                tostring(picked_name), tostring(blocked_kind), tostring(blocked_detail))
+        end
     end
 
     local cam_loc, cam_rot, cerr = get_camera_viewpoint()
@@ -678,6 +826,14 @@ local function _begin_grab(actor, picked_name)
                      { X = cam_loc.X, Y = cam_loc.Y, Z = cam_loc.Z }
     local orig_rot = feature_actor.actor_rotation(actor) or
                      { Pitch = 0, Yaw = 0, Roll = 0 }
+    local fixed_rotation = nil
+    if options.fixed_rotation then
+        fixed_rotation = {
+            Pitch = options.fixed_rotation.Pitch or options.fixed_rotation.pitch or 0,
+            Yaw   = options.fixed_rotation.Yaw   or options.fixed_rotation.yaw   or 0,
+            Roll  = options.fixed_rotation.Roll  or options.fixed_rotation.roll  or 0,
+        }
+    end
 
     -- Seed distance/z so the actor doesn't snap on the first tick.
     -- New (3D-forward) model: distance is the projection of the
@@ -692,6 +848,9 @@ local function _begin_grab(actor, picked_name)
     local proj = dx * fx + dy * fy + dz * fz
     if proj < 50.0 then proj = DEFAULT_DISTANCE end
     local z_residual = dz - fz * proj
+    if options.center_on_reticle then
+        z_residual = 0.0
+    end
     local horiz = proj
 
     feature_actor.force_actor_movable(actor)
@@ -714,7 +873,16 @@ local function _begin_grab(actor, picked_name)
         scale      = uniform,
         mode       = "move",
         dest       = { X = 0, Y = 0, Z = 0 },
-        rot        = { Pitch = 0, Yaw = 0, Roll = 0 },
+        rot        = fixed_rotation and {
+            Pitch = fixed_rotation.Pitch,
+            Yaw = fixed_rotation.Yaw,
+            Roll = fixed_rotation.Roll,
+        } or {
+            Pitch = orig_rot.Pitch or 0,
+            Yaw = orig_rot.Yaw or 0,
+            Roll = orig_rot.Roll or 0,
+        },
+        fixed_rotation = fixed_rotation,
         loop_armed = false,
     }
     start_loop()
@@ -759,16 +927,42 @@ function M.start(name)
         end
         if not picked then
             local hit_actor, _impact, terr = _trace_from_camera(LOOKAT_MAX_DISTANCE)
-            if not hit_actor then
+            local item_actor = select(1, pick_world_item_candidate({ trace_impact = _impact }))
+            if item_actor then
+                picked = item_actor
+            elseif hit_actor then
+                picked = hit_actor
+            else
                 return false, "lookat: " .. tostring(terr)
             end
-            picked = hit_actor
         end
         actor = picked
         picked_name = feature_actor.short_name_of(actor) or "<unnamed>"
     end
 
     return _begin_grab(actor, picked_name)
+end
+
+function M.start_item()
+    if grab then
+        return false, "already grabbing " .. tostring(grab.name) .. " ; release first"
+    end
+    if not _oculus_is_active() then
+        return false, "camera.grab.item requires oculus freecam to be active"
+    end
+    local actor, _loc, _source, err = pick_world_item_candidate({ force = true })
+    if not feature_actor.is_valid_object(actor) then
+        return false, tostring(err or "no runtime world item near reticle")
+    end
+    local picked_name = feature_actor.short_name_of(actor) or "<unnamed item>"
+    return _begin_grab(actor, picked_name)
+end
+
+function M.toggle_item()
+    if grab then
+        return M.release()
+    end
+    return M.start_item()
 end
 
 -- camera.grab.lastspawned
@@ -779,7 +973,7 @@ end
 -- since the spawn. Same oculus-required guard as M.start ; the
 -- intended workflow is "fly around in oculus, spawn at reticle, then
 -- nudge the new actor into precise position before releasing".
-function M.start_lastspawned()
+local function start_lastspawned_with_options(options)
     if grab then
         return false, "already grabbing " .. tostring(grab.name) .. " ; release first"
     end
@@ -791,7 +985,31 @@ function M.start_lastspawned()
         return false, "no lastspawned actor (or it has been destroyed): " .. tostring(rerr)
     end
     local picked_name = feature_actor.short_name_of(actor) or "lastspawned"
-    return _begin_grab(actor, picked_name)
+    if options and options.scale then
+        local ok_scale = feature_actor.set_actor_scale3d(actor, options.scale)
+        if not ok_scale then
+            return false, "spawned actor found, but source scale copy failed"
+        end
+    end
+    if options and options.rotation then
+        local ok_rot = feature_actor.set_actor_rotation(actor, options.rotation)
+        if not ok_rot then
+            return false, "spawned actor found, but source rotation copy failed"
+        end
+    end
+    return _begin_grab(actor, picked_name, options)
+end
+
+function M.start_lastspawned()
+    return start_lastspawned_with_options({ center_on_reticle = true })
+end
+
+function M.start_lastspawned_preserving_transform(rotation, scale)
+    return start_lastspawned_with_options({
+        rotation = rotation,
+        scale = scale,
+        fixed_rotation = rotation,
+    })
 end
 
 local function pick_target_under_reticle()
@@ -802,12 +1020,18 @@ local function pick_target_under_reticle()
     end
     if not actor then
         local hit_actor, hit_impact, err = _trace_from_camera(LOOKAT_MAX_DISTANCE)
-        if not hit_actor then
+        local item_actor, item_loc, item_source = pick_world_item_candidate({ trace_impact = hit_impact })
+        if item_actor then
+            actor = item_actor
+            impact = item_loc
+            source = item_source
+        elseif hit_actor then
+            actor = hit_actor
+            impact = hit_impact
+            source = "trace"
+        else
             return nil, nil, nil, "no actor under reticle (trace: " .. tostring(err) .. ")"
         end
-        actor = hit_actor
-        impact = hit_impact
-        source = "trace"
     end
     local loc = impact or feature_actor.actor_location(actor) or { X = 0, Y = 0, Z = 0 }
     return actor, loc, source, nil
@@ -845,6 +1069,26 @@ function M.lookat()
     -- player can glance at the screen and know what their reticle is
     -- on without alt-tabbing to the bridge log.
     _toast(_label_for(actor), 1.5)
+    local ok_capture, capture_detail = feature_oculus_transform.capture_actor(actor, source)
+    if not ok_capture then
+        print("[RSDWTools] camera.lookat transform capture failed: " .. tostring(capture_detail))
+    end
+    return true, string.format(
+        "%s [class=%s, src=%s] @ (%.0f, %.0f, %.0f)",
+        short, class, source, loc.X or 0, loc.Y or 0, loc.Z or 0
+    )
+end
+
+function M.lookat_item()
+    local actor, loc, source, err = pick_world_item_candidate({ force = true })
+    if not actor then return false, err end
+    local short = feature_actor.short_name_of(actor) or "<unnamed>"
+    local class = feature_field.class_name_of(actor) or "<unknown>"
+    _toast(_label_for(actor), 1.5)
+    local ok_capture, capture_detail = feature_oculus_transform.capture_actor(actor, source)
+    if not ok_capture then
+        print("[RSDWTools] camera.lookat.item transform capture failed: " .. tostring(capture_detail))
+    end
     return true, string.format(
         "%s [class=%s, src=%s] @ (%.0f, %.0f, %.0f)",
         short, class, source, loc.X or 0, loc.Y or 0, loc.Z or 0
@@ -920,6 +1164,35 @@ function M.mode(mode_str)
     return true, "mode=" .. m
 end
 
+-- camera.grab.safety <on|off|toggle|status>
+--
+-- Runtime-only safety switch. Default is ON on script load, which keeps the
+-- historical block list for building pieces, landscape/static world actors,
+-- foliage, and BPP_ placement actors. Turning it OFF lets camera.grab start on
+-- those targets until the user turns it back ON or the script reloads.
+function M.safety(mode_str)
+    local mode = trim(mode_str):lower()
+    if mode == "" or mode == "status" then
+        return true, "safety=" .. grab_safety_label() .. "; blocked=building_piece,staticmeshactor,landscapeproxy,instancedfoliageactor,bpp_"
+    end
+    if mode == "toggle" then
+        grab_safety_enabled = not grab_safety_enabled
+    elseif mode == "on" or mode == "true" or mode == "1" or mode == "safe" then
+        grab_safety_enabled = true
+    elseif mode == "off" or mode == "false" or mode == "0" or mode == "unsafe" or mode == "allow" or mode == "allow_all" then
+        grab_safety_enabled = false
+    else
+        return false, "usage: camera.grab.safety <on|off|toggle|status>"
+    end
+
+    local label = grab_safety_enabled and "Grab safety: ON" or "Grab safety: OFF"
+    _toast(label, 1.5)
+    if grab_safety_enabled then
+        return true, "safety=on; camera.grab blocks unsafe world/static targets"
+    end
+    return true, "safety=off; camera.grab target blocks bypassed"
+end
+
 -- camera.grab.delta <signed_number>
 -- Applies one wheel-tick of input to the active mode.
 function M.delta(delta_str)
@@ -992,11 +1265,11 @@ end
 
 -- camera.grab.status -- pure introspection ; no state change.
 function M.status()
-    if not grab then return true, "idle" end
+    if not grab then return true, "idle safety=" .. grab_safety_label() end
     return true, string.format(
-        "name=%s mode=%s dist=%.0f z=%.0f yaw=%.1f scale=%.3f",
+        "name=%s mode=%s dist=%.0f z=%.0f yaw=%.1f scale=%.3f safety=%s",
         grab.name, grab.mode, grab.distance, grab.z_offset,
-        grab.yaw_offset, grab.scale
+        grab.yaw_offset, grab.scale, grab_safety_label()
     )
 end
 
@@ -1016,6 +1289,8 @@ function M.pick_actor_under_reticle()
         if feature_actor.is_valid_object(a) then return a, "detector" end
     end
     local hit_actor, _impact, err = _trace_from_camera(LOOKAT_MAX_DISTANCE)
+    local item_actor, _item_loc, item_source = pick_world_item_candidate({ trace_impact = _impact })
+    if feature_actor.is_valid_object(item_actor) then return item_actor, item_source end
     if feature_actor.is_valid_object(hit_actor) then return hit_actor, "trace" end
     return nil, "no actor under reticle (trace: " .. tostring(err) .. ")"
 end
@@ -1036,6 +1311,11 @@ function M.pick_hit_under_reticle()
         end
     end
     local actor, loc, err, details = _trace_from_camera(LOOKAT_MAX_DISTANCE)
+    local item_actor, item_loc, item_source, _item_err, item_details =
+        pick_world_item_candidate({ trace_impact = loc })
+    if feature_actor.is_valid_object(item_actor) then
+        return item_actor, item_loc or feature_actor.actor_location(item_actor) or { X = 0, Y = 0, Z = 0 }, item_source, nil, item_details
+    end
     if feature_actor.is_valid_object(actor) then
         return actor, loc or feature_actor.actor_location(actor) or { X = 0, Y = 0, Z = 0 }, "trace", nil, details
     end

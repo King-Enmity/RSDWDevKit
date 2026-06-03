@@ -35,12 +35,163 @@
 local M = {}
 
 local feature_actor = require("feature_actor")
+local unwrap_param
 
 -- ---------------------------------------------------------------------------
 -- Local lookup helpers.
 -- ---------------------------------------------------------------------------
 local function is_valid(obj)
     return feature_actor.is_valid_object(obj)
+end
+
+local function actor_short_name(actor)
+    if not is_valid(actor) then return nil end
+    return feature_actor.short_name_of(actor)
+end
+
+local function actor_location(actor)
+    if not is_valid(actor) then return nil end
+    if actor.K2_GetActorLocation then
+        local ok, loc = pcall(function() return actor:K2_GetActorLocation() end)
+        if ok and loc then return loc end
+    end
+    if actor.GetActorLocation then
+        local ok, loc = pcall(function() return actor:GetActorLocation() end)
+        if ok and loc then return loc end
+    end
+    return nil
+end
+
+local function is_runtime_world_item(actor)
+    if not is_valid(actor) then return false end
+    local cls_name, full_name
+    pcall(function()
+        local cls = actor:GetClass()
+        if cls then
+            if cls.GetFName then
+                local fn = cls:GetFName()
+                if fn and fn.ToString then cls_name = fn:ToString() end
+            end
+            if not cls_name and cls.GetName then cls_name = cls:GetName() end
+        end
+    end)
+    pcall(function() full_name = actor:GetFullName() end)
+    local hay = ((cls_name or "") .. " " .. (full_name or "")):lower()
+    return hay:find("runtimespawnedworlditem", 1, true) ~= nil
+        or hay:find("bp_runtimespawnedworlditem", 1, true) ~= nil
+end
+
+local ITEM_FIND_CLASSES = {
+    "BP_RuntimeSpawnedWorldItem_C",
+    "BP_RuntimeSpawnedWorldItem_NoDelayForMagnet_C",
+    "BP_RuntimeSpawnedWorldItem_ProcessingStation_C",
+    "RuntimeSpawnedWorldItem",
+    "WorldItem",
+}
+
+local function enumerate_runtime_world_items()
+    if not FindAllOf then return {} end
+    local out, seen = {}, {}
+    local function add(actor)
+        if not is_runtime_world_item(actor) then return end
+        local key = actor_short_name(actor) or tostring(actor)
+        if seen[key] then return end
+        seen[key] = true
+        out[#out + 1] = actor
+    end
+    for _, class_name in ipairs(ITEM_FIND_CLASSES) do
+        local ok, list = pcall(FindAllOf, class_name)
+        if ok and type(list) == "table" then
+            for _, actor in ipairs(list) do add(actor) end
+        end
+    end
+    if #out == 0 then
+        local ok, actors = pcall(function()
+            local list = FindAllOf("Actor")
+            if type(list) ~= "table" then list = FindAllOf("AActor") end
+            return list
+        end)
+        if ok and type(actors) == "table" then
+            for _, actor in ipairs(actors) do add(actor) end
+        end
+    end
+    return out
+end
+
+local function distance_sq(a, b)
+    if not a or not b then return nil end
+    local dx = (a.X or 0) - (b.X or 0)
+    local dy = (a.Y or 0) - (b.Y or 0)
+    local dz = (a.Z or 0) - (b.Z or 0)
+    return dx * dx + dy * dy + dz * dz
+end
+
+local function collect_runtime_world_item_names_near(loc, radius)
+    local names = {}
+    local r2 = (radius or 750.0) * (radius or 750.0)
+    for _, actor in ipairs(enumerate_runtime_world_items()) do
+        local name = actor_short_name(actor)
+        local d2 = distance_sq(actor_location(actor), loc)
+        if name and d2 and d2 <= r2 then
+            names[name] = true
+        end
+    end
+    return names
+end
+
+local function first_actor_from_world_item_set(...)
+    for arg_i = 1, select("#", ...) do
+        local coll = select(arg_i, ...)
+        if coll ~= nil then
+            local n = 0
+            pcall(function()
+                local len = #coll
+                if type(len) == "number" then n = len end
+            end)
+            if n == 0 and type(coll) == "userdata" then
+                pcall(function()
+                    local v = coll:Num()
+                    if type(v) == "number" then n = v end
+                end)
+            end
+            for _, base in ipairs({ 1, 0 }) do
+                local last_i = base == 1 and n or math.max(0, n - 1)
+                for i = base, last_i do
+                    local ok_entry, entry = pcall(function() return coll[i] end)
+                    if ok_entry then
+                        entry = unwrap_param(entry)
+                        if is_runtime_world_item(entry) then return entry end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function find_new_runtime_world_item_near(loc, before_names, radius)
+    local r2 = (radius or 750.0) * (radius or 750.0)
+    local best, best_d2 = nil, nil
+    for _, actor in ipairs(enumerate_runtime_world_items()) do
+        local name = actor_short_name(actor)
+        if name and not before_names[name] then
+            local d2 = distance_sq(actor_location(actor), loc)
+            if d2 and d2 <= r2 and (not best_d2 or d2 < best_d2) then
+                best = actor
+                best_d2 = d2
+            end
+        end
+    end
+    return best
+end
+
+local function remember_last_spawned_world_item(actor)
+    if not is_runtime_world_item(actor) then return nil end
+    pcall(function()
+        local feature_field = require("feature_field")
+        feature_field.set_last_spawned(actor)
+    end)
+    return actor_short_name(actor)
 end
 
 local function get_pawn()
@@ -81,7 +232,7 @@ end
 -- one or two :get() calls peel back to the real userdata. Without this
 -- `entry.PackageName` returns a wrapper whose own fields are nil and the
 -- whole sweep silently produces zero records. Mirrors feature_assets.unwrap_param.
-local function unwrap_param(v)
+function unwrap_param(v)
     if type(v) ~= "userdata" then return v end
     for _ = 1, 2 do
         local has_get = false
@@ -324,16 +475,22 @@ function M.give(args_str)
         Translation = { X = loc.X, Y = loc.Y, Z = loc.Z },
         Scale3D     = { X = 1.0, Y = 1.0, Z = 1.0 },
     }
+    local before_names = collect_runtime_world_item_names_near(loc, 750.0)
     local out_set = {}
-    local ok, ret = pcall(function()
-        return inv:DropItemByData(item, xform, count, out_set)
+    local ret, ret_out
+    local ok, err = pcall(function()
+        ret, ret_out = inv:DropItemByData(item, xform, count, out_set)
     end)
-    if not ok then return false, "DropItemByData errored: " .. tostring(ret) end
+    if not ok then return false, "DropItemByData errored: " .. tostring(err) end
     if ret == false then
         return false, string.format("DropItemByData refused %s", name)
     end
-    print(string.format("[RSDWTools] items.give %s x%d -> dropped", name, count))
-    return true, string.format("%s x%d (dropped)", name, count)
+    local spawned_actor = first_actor_from_world_item_set(out_set, ret_out)
+        or find_new_runtime_world_item_near(loc, before_names, 750.0)
+    local spawned_name = remember_last_spawned_world_item(spawned_actor)
+    local suffix = spawned_name and (" lastspawned=" .. spawned_name) or ""
+    print(string.format("[RSDWTools] items.give %s x%d -> dropped%s", name, count, suffix))
+    return true, string.format("%s x%d (dropped)%s", name, count, suffix)
 end
 
 -- ---------------------------------------------------------------------------

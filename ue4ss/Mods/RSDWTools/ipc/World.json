@@ -1,6 +1,74 @@
 {
   "version": 5,
-  "folders": [],
+  "folders": [
+    {
+      "name": "Engine Controls",
+      "mods": [
+        {
+          "name": "Normal",
+          "class": "WorldSettings",
+          "reach_spec": "world.PersistentLevel.WorldSettings",
+          "field": "TimeDilation",
+          "value": "1.0",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        },
+        {
+          "name": "Slomo (10%)",
+          "class": "WorldSettings",
+          "reach_spec": "world.PersistentLevel.WorldSettings",
+          "field": "TimeDilation",
+          "value": "0.1",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        },
+        {
+          "name": "Pause",
+          "class": "WorldSettings",
+          "reach_spec": "world.PersistentLevel.WorldSettings",
+          "field": "TimeDilation",
+          "value": "0.000001",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        },
+        {
+          "name": "Double (200%)",
+          "class": "WorldSettings",
+          "reach_spec": "world.PersistentLevel.WorldSettings",
+          "field": "TimeDilation",
+          "value": "2.0",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        },
+        {
+          "name": "Fast Forward (100x)",
+          "class": "WorldSettings",
+          "reach_spec": "world.PersistentLevel.WorldSettings",
+          "field": "TimeDilation",
+          "value": "100.0",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        },
+        {
+          "name": "Half Time",
+          "class": "WorldSettings",
+          "reach_spec": "world.PersistentLevel.WorldSettings",
+          "field": "TimeDilation",
+          "value": "0.5",
+          "type": "float",
+          "ue_type": "float",
+          "kind": "set"
+        }
+      ],
+      "show_apply_all": false,
+      "color": "#E0C04F"
+    }
+  ],
   "kits": [
     {
       "name": "Time Controls",
@@ -167,7 +235,6 @@
           "color": "#7FBF45"
         }
       ],
-      "author": "Hi im Tat",
       "show_apply_all": false,
       "color": "#9E9E9E",
       "sub_kits": [
@@ -617,7 +684,6 @@
           "color": "#E0584F"
         }
       ],
-      "author": "Hi im Tat",
       "show_apply_all": false,
       "color": "#7B5FE0",
       "sub_kits": []
@@ -625,7 +691,6 @@
     {
       "name": "Foliage Controls",
       "folders": [],
-      "author": "Hi im Tat",
       "show_apply_all": false,
       "color": "#5A8C5A",
       "sub_kits": [
@@ -873,6 +938,94 @@
           "sub_kits": []
         }
       ]
+    },
+    {
+      "name": "AI Controls",
+      "folders": [
+        {
+          "name": "Pause AI",
+          "mods": [
+            {
+              "name": "Pause AI",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "world.foreach DominionAICharacter set CustomTimeDilation 0",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Nearby AI: Paused",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "2"
+            }
+          ]
+        },
+        {
+          "name": "Unpause AI",
+          "mods": [
+            {
+              "name": "Unpause AI",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "world.foreach DominionAICharacter set CustomTimeDilation 1.0",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "Nearby AI: Play",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "2"
+            }
+          ],
+          "hotkey_mode": "toggle"
+        },
+        {
+          "name": "Delete All AI",
+          "mods": [
+            {
+              "name": "Bye",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "world.foreach DominionAICharacter call K2_DestroyActor 1",
+              "type": "",
+              "ue_type": "",
+              "kind": "raw"
+            },
+            {
+              "name": "On-screen text",
+              "class": "",
+              "reach_spec": "",
+              "field": "",
+              "value": "All Nearby AI Destroyed",
+              "type": "",
+              "ue_type": "",
+              "kind": "umg",
+              "umg_duration": "2"
+            }
+          ],
+          "color": "#E0584F"
+        }
+      ],
+      "show_apply_all": false,
+      "color": "#E0584F",
+      "sub_kits": []
     }
   ]
 }

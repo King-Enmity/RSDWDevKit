@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "sections": [
     {
       "name": "Init",
@@ -8,10 +8,6 @@
         {
           "name": "Unlock Distance",
           "verb": "camera.oculus.distance 999999 999999"
-        },
-        {
-          "name": "Default Speed",
-          "verb": "camera.oculus.speed 1200 4000 8000"
         },
         {
           "name": "NoClip",
@@ -113,6 +109,15 @@
           "umg_text_off": "Active",
           "hotkey": "FIVE",
           "hotkey_mode": "toggle"
+        },
+        {
+          "name": "Grab Safety",
+          "verb": "camera.grab.safety off",
+          "verb_off": "camera.grab.safety on",
+          "umg_text": "Off",
+          "umg_text_off": "On",
+          "hotkey": "SIX",
+          "hotkey_mode": "toggle"
         }
       ]
     },
@@ -153,6 +158,11 @@
           "name": "Inspect Actor",
           "verb": "camera.lookat",
           "hotkey": "RIGHT_MOUSE_BUTTON"
+        },
+        {
+          "name": "Duplicate Actor",
+          "verb": "camera.oculus.clone",
+          "hotkey": "F"
         },
         {
           "name": "Undo Grab",
@@ -242,6 +252,10 @@
           "modifiers": [
             "LEFT_ALT"
           ]
+        },
+        {
+          "name": "Grab Safety",
+          "verb": "camera.grab.safety toggle"
         }
       ]
     },
@@ -256,6 +270,14 @@
         {
           "name": "Restore Damage",
           "verb": "player.field.set pawn.PlayerDamageComponent bCanTakeDamage true"
+        },
+        {
+          "name": "Restore Grab Safety",
+          "verb": "camera.grab.safety on"
+        },
+        {
+          "name": "Exit",
+          "verb": "umg 2 Oculus: Disabled"
         }
       ]
     }
