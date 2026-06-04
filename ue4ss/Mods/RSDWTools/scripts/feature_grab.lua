@@ -39,6 +39,7 @@ local M = {}
 
 local feature_actor = require("feature_actor")
 local feature_field = require("feature_field")
+local feature_inventory = require("feature_inventory")
 local feature_umg   = require("feature_umg")
 local feature_oculus_transform = require("feature_oculus_transform")
 
@@ -1122,10 +1123,25 @@ end
 function M.release()
     if not grab then return false, "not grabbing anything" end
     local name = grab.name
+    local actor = grab.actor
     local label = (feature_actor.is_valid_object(grab.actor) and _label_for(grab.actor)) or name
+    local stabilize_detail = ""
+    if feature_actor.is_valid_object(actor)
+       and feature_inventory._is_runtime_world_item
+       and feature_inventory._is_runtime_world_item(actor) then
+        local ok_stable, stable_result = feature_inventory.stabilize_runtime_world_item(actor)
+        if ok_stable then
+            local actions = stable_result and stable_result.actions or {}
+            local failures = stable_result and stable_result.failures or {}
+            stabilize_detail = string.format(" + stabilized runtime item actions=%d failures=%d",
+                #actions, #failures)
+        else
+            stabilize_detail = " + runtime item stabilize failed"
+        end
+    end
     _toast("Released: " .. label, 1.5)
     grab = nil
-    return true, "released " .. name
+    return true, "released " .. name .. stabilize_detail
 end
 
 -- camera.grab.toggle [<name>] -- one verb, two behaviors. If something

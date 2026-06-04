@@ -35,6 +35,8 @@
 local M = {}
 
 local feature_actor = require("feature_actor")
+local feature_field = require("feature_field")
+local mod_paths = require("mod_paths")
 local unwrap_param
 
 -- ---------------------------------------------------------------------------
@@ -188,10 +190,486 @@ end
 local function remember_last_spawned_world_item(actor)
     if not is_runtime_world_item(actor) then return nil end
     pcall(function()
-        local feature_field = require("feature_field")
         feature_field.set_last_spawned(actor)
     end)
     return actor_short_name(actor)
+end
+
+local function object_full_name(obj)
+    if not is_valid(obj) or not obj.GetFullName then return nil end
+    local ok, value = pcall(function() return obj:GetFullName() end)
+    if ok and type(value) == "string" and value ~= "" then return value end
+    return nil
+end
+
+local function object_class_name(obj)
+    if not is_valid(obj) then return nil end
+    local cls
+    pcall(function() cls = obj:GetClass() end)
+    if not is_valid(cls) then return nil end
+    if cls.GetFullName then
+        local ok, value = pcall(function() return cls:GetFullName() end)
+        if ok and type(value) == "string" and value ~= "" then return value end
+    end
+    if cls.GetName then
+        local ok, value = pcall(function() return cls:GetName() end)
+        if ok and type(value) == "string" and value ~= "" then return value end
+    end
+    return nil
+end
+
+local function simple_value(v)
+    local tv = type(v)
+    if tv == "string" or tv == "number" or tv == "boolean" or v == nil then return v end
+    return tostring(v)
+end
+
+local function read_simple_field(obj, field_name)
+    if not is_valid(obj) then return nil end
+    local ok, value = pcall(function() return obj[field_name] end)
+    if ok then return simple_value(value) end
+    return nil
+end
+
+local function read_method_value(obj, method_name, ...)
+    if not is_valid(obj) then return nil end
+    local fn = obj[method_name]
+    if not fn then return nil end
+    local args = { ... }
+    local ok, value = pcall(function() return fn(obj, table.unpack(args)) end)
+    if ok then return simple_value(value) end
+    return nil
+end
+
+local function item_transform_snapshot(actor)
+    local loc = actor_location(actor)
+    local rot
+    if is_valid(actor) and actor.K2_GetActorRotation then
+        local ok, value = pcall(function() return actor:K2_GetActorRotation() end)
+        if ok then rot = value end
+    end
+    local scale = feature_actor.get_actor_scale3d and feature_actor.get_actor_scale3d(actor) or nil
+    return {
+        x = loc and loc.X or nil,
+        y = loc and loc.Y or nil,
+        z = loc and loc.Z or nil,
+        pitch = rot and rot.Pitch or nil,
+        yaw = rot and rot.Yaw or nil,
+        roll = rot and rot.Roll or nil,
+        scale_x = scale and scale.X or nil,
+        scale_y = scale and scale.Y or nil,
+        scale_z = scale and scale.Z or nil,
+    }
+end
+
+local function add_component(out, seen, comp, label)
+    if not is_valid(comp) then return end
+    local key = object_full_name(comp) or tostring(comp)
+    if seen[key] then return end
+    seen[key] = true
+    out[#out + 1] = { label = label, ref = comp }
+end
+
+local function get_runtime_item_components(actor)
+    local out, seen = {}, {}
+    if not is_valid(actor) then return out end
+
+    add_component(out, seen, actor.RootComponent, "RootComponent")
+    for _, field_name in ipairs({
+        "ItemMesh",
+        "LaunchableComponent",
+        "MagneticComponentGrantItem",
+        "InteractionCollision",
+        "InteractionComponent",
+        "NS_Sparkles",
+    }) do
+        local ok, value = pcall(function() return actor[field_name] end)
+        if ok then add_component(out, seen, value, field_name) end
+    end
+    for _, method_name in ipairs({
+        "GetStaticMeshComponent",
+        "GetLaunchableComponent",
+        "GetMagneticComponent",
+        "GetInteractionCollision",
+        "GetInteractionComponent",
+    }) do
+        local fn = actor[method_name]
+        if fn then
+            local ok, value = pcall(function() return fn(actor) end)
+            if ok then add_component(out, seen, value, method_name .. "()") end
+        end
+    end
+    return out
+end
+
+local function none_bone_name()
+    if FName then
+        local ok, value = pcall(FName, "")
+        if ok then return value end
+    end
+    return ""
+end
+
+local function component_snapshot(entry)
+    local comp = entry and entry.ref
+    local bone = none_bone_name()
+    return {
+        label = entry and entry.label or nil,
+        name = object_full_name(comp),
+        class = object_class_name(comp),
+        b_auto_activate = read_simple_field(comp, "bAutoActivate"),
+        b_is_active = read_simple_field(comp, "bIsActive"),
+        active = read_method_value(comp, "IsActive"),
+        component_tick_enabled = read_method_value(comp, "IsComponentTickEnabled"),
+        b_visible = read_simple_field(comp, "bVisible"),
+        b_hidden_in_game = read_simple_field(comp, "bHiddenInGame"),
+        mobility = read_simple_field(comp, "Mobility"),
+        collision_enabled = read_method_value(comp, "GetCollisionEnabled"),
+        collision_profile = read_method_value(comp, "GetCollisionProfileName"),
+        generate_overlap_events = read_method_value(comp, "GetGenerateOverlapEvents"),
+        simulating_physics = read_method_value(comp, "IsSimulatingPhysics", bone),
+        gravity_enabled = read_method_value(comp, "IsGravityEnabled"),
+        b_launched = read_simple_field(comp, "bLaunched"),
+        b_just_launched = read_simple_field(comp, "bJustLaunched"),
+        launch_is_launched = read_method_value(comp, "IsLaunched"),
+        b_allow_auto_magnetization = read_simple_field(comp, "bAllowAutoMagnetization"),
+        b_auto_magnetization_enabled = read_simple_field(comp, "bAutoMagnetizationEnabled"),
+        b_has_been_granted = read_simple_field(comp, "bHasBeenGranted"),
+        magnet_auto_enabled = read_method_value(comp, "IsAutoMagnetizationEnabled"),
+        has_set_mobility = is_valid(comp) and comp.SetMobility ~= nil or false,
+        has_set_simulate_physics = is_valid(comp) and comp.SetSimulatePhysics ~= nil or false,
+        has_set_enable_gravity = is_valid(comp) and comp.SetEnableGravity ~= nil or false,
+        has_put_rigid_body_to_sleep = is_valid(comp) and comp.PutRigidBodyToSleep ~= nil or false,
+        has_pause_launch = is_valid(comp) and comp.PauseLaunch ~= nil or false,
+    }
+end
+
+local function runtime_item_snapshot(actor, note)
+    if not is_runtime_world_item(actor) then return nil end
+    local components = {}
+    for _, entry in ipairs(get_runtime_item_components(actor)) do
+        components[#components + 1] = component_snapshot(entry)
+    end
+    return {
+        note = note,
+        actor = {
+            name = actor_short_name(actor),
+            full_name = object_full_name(actor),
+            class = object_class_name(actor),
+        },
+        transform = item_transform_snapshot(actor),
+        fields = {
+            bRegisterAsRuntimeSpawned = read_simple_field(actor, "bRegisterAsRuntimeSpawned"),
+            bHasCustomLifetime = read_simple_field(actor, "bHasCustomLifetime"),
+            CustomLifetimeInGameEndTicks = read_simple_field(actor, "CustomLifetimeInGameEndTicks"),
+            NameOfPlayerCharacterThatDroppedItem = read_simple_field(actor, "NameOfPlayerCharacterThatDroppedItem"),
+            GuidOfPlayerCharacterThatDroppedItem = read_simple_field(actor, "GuidOfPlayerCharacterThatDroppedItem"),
+            NetCullDistanceBand = read_simple_field(actor, "NetCullDistanceBand"),
+            player_character_that_dropped_item = read_method_value(actor, "GetPlayerCharacterThatDroppedItem"),
+        },
+        components = components,
+    }
+end
+
+local function json_escape(s)
+    s = tostring(s or "")
+    s = s:gsub("\\", "\\\\")
+         :gsub("\"", "\\\"")
+         :gsub("\b", "\\b")
+         :gsub("\f", "\\f")
+         :gsub("\n", "\\n")
+         :gsub("\r", "\\r")
+         :gsub("\t", "\\t")
+    return '"' .. s .. '"'
+end
+
+local function is_array_table(t)
+    local max_i, count = 0, 0
+    for k, _ in pairs(t) do
+        if type(k) ~= "number" or k < 1 or k % 1 ~= 0 then return false end
+        if k > max_i then max_i = k end
+        count = count + 1
+    end
+    return max_i == count
+end
+
+local function json_value(v)
+    local tv = type(v)
+    if tv == "nil" then return "null" end
+    if tv == "boolean" then return v and "true" or "false" end
+    if tv == "number" then
+        if v ~= v or v == math.huge or v == -math.huge then return "null" end
+        return string.format("%.6f", v):gsub("0+$", ""):gsub("%.$", "")
+    end
+    if tv == "string" then return json_escape(v) end
+    if tv ~= "table" then return json_escape(tostring(v)) end
+    local parts = {}
+    if is_array_table(v) then
+        for i = 1, #v do parts[#parts + 1] = json_value(v[i]) end
+        return "[" .. table.concat(parts, ",") .. "]"
+    end
+    local keys = {}
+    for k, _ in pairs(v) do keys[#keys + 1] = tostring(k) end
+    table.sort(keys)
+    for _, k in ipairs(keys) do
+        parts[#parts + 1] = json_escape(k) .. ":" .. json_value(v[k])
+    end
+    return "{" .. table.concat(parts, ",") .. "}"
+end
+
+local function write_runtime_item_report(file_stem, report, lines)
+    local dir = mod_paths.ipc_dir()
+    if not dir then return false, "ipc dir unavailable" end
+    pcall(os.execute, ('if not exist "%s" mkdir "%s"'):format(dir, dir))
+    local json_path = dir .. "\\" .. file_stem .. ".json"
+    local text_path = dir .. "\\" .. file_stem .. ".txt"
+    local ok_json, json_result = mod_paths.write_atomic(json_path, json_value(report))
+    if not ok_json then return false, json_result end
+    local ok_text, text_result = mod_paths.write_atomic(text_path, table.concat(lines, "\n") .. "\n")
+    if not ok_text then return false, text_result end
+    return true, json_path .. " ; " .. text_path
+end
+
+local function bool_text(v)
+    if type(v) == "boolean" then return v and "true" or "false" end
+    if v == nil then return "<nil>" end
+    return tostring(v)
+end
+
+local function append_snapshot_lines(lines, snap)
+    if type(snap) ~= "table" then return end
+    local actor = snap.actor or {}
+    local fields = snap.fields or {}
+    lines[#lines + 1] = string.format("%s: %s", tostring(snap.note or "snapshot"), tostring(actor.name or "<unnamed>"))
+    lines[#lines + 1] = string.format("  class=%s", tostring(actor.class or "<unknown>"))
+    lines[#lines + 1] = string.format("  runtime=%s custom_lifetime=%s dropper=%s guid=%s",
+        bool_text(fields.bRegisterAsRuntimeSpawned),
+        bool_text(fields.bHasCustomLifetime),
+        tostring(fields.NameOfPlayerCharacterThatDroppedItem or ""),
+        tostring(fields.GuidOfPlayerCharacterThatDroppedItem or ""))
+    for _, comp in ipairs(snap.components or {}) do
+        lines[#lines + 1] = string.format("  component %-28s sim=%s gravity=%s collision=%s launched=%s",
+            tostring(comp.label or "?"),
+            bool_text(comp.simulating_physics),
+            bool_text(comp.gravity_enabled),
+            tostring(comp.collision_enabled or "<nil>"),
+            bool_text(comp.launch_is_launched))
+        if comp.b_launched ~= nil or comp.b_just_launched ~= nil or comp.active ~= nil
+            or comp.b_visible ~= nil or comp.b_hidden_in_game ~= nil then
+            lines[#lines + 1] = string.format("    active=%s auto=%s bLaunched=%s bJustLaunched=%s visible=%s hidden=%s tick=%s",
+                bool_text(comp.active),
+                bool_text(comp.b_auto_activate),
+                bool_text(comp.b_launched),
+                bool_text(comp.b_just_launched),
+                bool_text(comp.b_visible),
+                bool_text(comp.b_hidden_in_game),
+                bool_text(comp.component_tick_enabled))
+        end
+    end
+end
+
+local function resolve_runtime_item_target(args_str, default_lastspawned)
+    local raw = tostring(args_str or ""):gsub("%s+[cC][oO][nN][fF][iI][rR][mM]%s*$", "")
+    raw = raw:match("^%s*(.-)%s*$") or ""
+    if raw == "" and default_lastspawned then raw = "lastspawned" end
+
+    local actor, err
+    if raw == "" or raw:lower() == "lastspawned" or raw:lower() == "latest" then
+        actor, err = feature_field.resolve_root("lastspawned")
+        if not is_valid(actor) then
+            return nil, "no lastspawned runtime item: " .. tostring(err)
+        end
+    else
+        actor = feature_actor.resolve_actor_by_name(raw)
+        if not is_valid(actor) then
+            return nil, "actor not found: " .. raw
+        end
+    end
+    if not is_runtime_world_item(actor) then
+        return nil, "target is not BP_RuntimeSpawnedWorldItem: " .. tostring(actor_short_name(actor) or raw)
+    end
+    return actor, raw
+end
+
+local function apply_runtime_item_stabilize(actor)
+    if not is_runtime_world_item(actor) then
+        return { ok = false, error = "not runtime world item" }
+    end
+
+    local result = {
+        ok = true,
+        actor = actor_short_name(actor),
+        actions = {},
+        failures = {},
+    }
+    local function action(label, fn)
+        local ok, err = pcall(fn)
+        if ok then
+            result.actions[#result.actions + 1] = label
+        else
+            result.failures[#result.failures + 1] = label .. ": " .. tostring(err)
+        end
+    end
+    local function class_has(comp, needle)
+        local class_name = object_class_name(comp)
+        return type(class_name) == "string"
+            and class_name:lower():find(tostring(needle or ""):lower(), 1, true) ~= nil
+    end
+    local function is_primitiveish(comp)
+        return class_has(comp, "StaticMeshComponent")
+            or class_has(comp, "BoxComponent")
+            or class_has(comp, "NiagaraComponent")
+    end
+
+    action("actor.bRegisterAsRuntimeSpawned=true", function() actor.bRegisterAsRuntimeSpawned = true end)
+    action("actor.bHasCustomLifetime=false", function() actor.bHasCustomLifetime = false end)
+    action("actor.NameOfPlayerCharacterThatDroppedItem=''", function()
+        actor.NameOfPlayerCharacterThatDroppedItem = ""
+    end)
+
+    local zero = { X = 0.0, Y = 0.0, Z = 0.0 }
+    local bone = none_bone_name()
+    for _, entry in ipairs(get_runtime_item_components(actor)) do
+        local comp = entry.ref
+        local label = tostring(entry.label or "component")
+        if is_valid(comp) and comp.SetComponentTickEnabled
+            and (class_has(comp, "LaunchableComponent")
+                or class_has(comp, "MagneticComponent_GrantItem")
+                or class_has(comp, "NiagaraComponent")) then
+            action(label .. ".SetComponentTickEnabled(false)", function() comp:SetComponentTickEnabled(false) end)
+        end
+
+        if is_valid(comp) and class_has(comp, "LaunchableComponent") then
+            action(label .. ".bLaunched=false", function() comp.bLaunched = false end)
+            action(label .. ".bJustLaunched=false", function() comp.bJustLaunched = false end)
+            action(label .. ".bAutoActivate=false", function() comp.bAutoActivate = false end)
+            action(label .. ".bIsActive=false", function() comp.bIsActive = false end)
+            if comp.PauseLaunch then
+                action(label .. ".PauseLaunch", function() comp:PauseLaunch() end)
+            end
+            if comp.SetActive then
+                action(label .. ".SetActive(false,false)", function() comp:SetActive(false, false) end)
+            end
+            if comp.Deactivate then
+                action(label .. ".Deactivate", function() comp:Deactivate() end)
+            end
+        end
+
+        if is_valid(comp) and class_has(comp, "MagneticComponent_GrantItem") then
+            action(label .. ".bAllowAutoMagnetization=false", function() comp.bAllowAutoMagnetization = false end)
+            action(label .. ".bAutoMagnetizationEnabled=false", function() comp.bAutoMagnetizationEnabled = false end)
+            action(label .. ".bAutoActivate=false", function() comp.bAutoActivate = false end)
+            if comp.SetActive then
+                action(label .. ".SetActive(false,false)", function() comp:SetActive(false, false) end)
+            end
+            if comp.Deactivate then
+                action(label .. ".Deactivate", function() comp:Deactivate() end)
+            end
+        end
+
+        if is_valid(comp) and class_has(comp, "NiagaraComponent") then
+            action(label .. ".bAutoActivate=false", function() comp.bAutoActivate = false end)
+            action(label .. ".bIsActive=false", function() comp.bIsActive = false end)
+            action(label .. ".bVisible=false", function() comp.bVisible = false end)
+            action(label .. ".bHiddenInGame=true", function() comp.bHiddenInGame = true end)
+            if comp.SetAutoActivate then
+                action(label .. ".SetAutoActivate(false)", function() comp:SetAutoActivate(false) end)
+            end
+            if comp.SetActive then
+                action(label .. ".SetActive(false,false)", function() comp:SetActive(false, false) end)
+            end
+            if comp.Deactivate then
+                action(label .. ".Deactivate", function() comp:Deactivate() end)
+            end
+            if comp.SetVisibility then
+                action(label .. ".SetVisibility(false,true)", function() comp:SetVisibility(false, true) end)
+            end
+            if comp.SetHiddenInGame then
+                action(label .. ".SetHiddenInGame(true,true)", function() comp:SetHiddenInGame(true, true) end)
+            end
+        end
+
+        if is_valid(comp) and is_primitiveish(comp) and comp.SetMobility then
+            action(label .. ".SetMobility(Movable)", function() comp:SetMobility("EComponentMobility::Movable") end)
+            action(label .. ".SetMobility(2)", function() comp:SetMobility(2) end)
+        end
+        if is_valid(comp) and is_primitiveish(comp) and comp.SetAllPhysicsLinearVelocity then
+            action(label .. ".SetAllPhysicsLinearVelocity(0)", function() comp:SetAllPhysicsLinearVelocity(zero, false) end)
+        end
+        if is_valid(comp) and is_primitiveish(comp) and comp.SetAllPhysicsAngularVelocityInDegrees then
+            action(label .. ".SetAllPhysicsAngularVelocityInDegrees(0)", function()
+                comp:SetAllPhysicsAngularVelocityInDegrees(zero, false)
+            end)
+        end
+        if is_valid(comp) and is_primitiveish(comp) and comp.SetSimulatePhysics then
+            action(label .. ".SetSimulatePhysics(false)", function() comp:SetSimulatePhysics(false) end)
+        end
+        if is_valid(comp) and is_primitiveish(comp) and comp.SetEnableGravity then
+            action(label .. ".SetEnableGravity(false)", function() comp:SetEnableGravity(false) end)
+        end
+        if is_valid(comp) and is_primitiveish(comp) and comp.PutRigidBodyToSleep then
+            action(label .. ".PutRigidBodyToSleep", function() comp:PutRigidBodyToSleep(bone) end)
+        end
+    end
+    return result
+end
+
+function M.stabilize_runtime_world_item(actor)
+    local before = runtime_item_snapshot(actor, "before")
+    local result = apply_runtime_item_stabilize(actor)
+    local after = runtime_item_snapshot(actor, "after")
+    return result.ok == true, result, before, after
+end
+
+function M.runtime_snapshot(args_str)
+    local actor, target = resolve_runtime_item_target(args_str, true)
+    if not actor then return false, target end
+    local snap = runtime_item_snapshot(actor, "snapshot")
+    local lines = {
+        "world.items.runtime.snapshot",
+        "target=" .. tostring(target),
+    }
+    append_snapshot_lines(lines, snap)
+    local report = {
+        ok = true,
+        command = "world.items.runtime.snapshot",
+        target = target,
+        snapshot = snap,
+    }
+    local ok_write, write_detail = write_runtime_item_report("world_items_runtime_snapshot", report, lines)
+    if not ok_write then return false, write_detail end
+    return true, "wrote " .. write_detail
+end
+
+function M.runtime_stabilize(args_str)
+    local actor, target = resolve_runtime_item_target(args_str, true)
+    if not actor then return false, target end
+    local before = runtime_item_snapshot(actor, "before")
+    local result = apply_runtime_item_stabilize(actor)
+    local after = runtime_item_snapshot(actor, "after")
+    local lines = {
+        "world.items.runtime.stabilize",
+        "target=" .. tostring(target),
+        "actions=" .. tostring(#(result.actions or {})) .. " failures=" .. tostring(#(result.failures or {})),
+    }
+    append_snapshot_lines(lines, before)
+    append_snapshot_lines(lines, after)
+    for _, failure in ipairs(result.failures or {}) do
+        lines[#lines + 1] = "failure: " .. tostring(failure)
+    end
+    local report = {
+        ok = result.ok == true,
+        command = "world.items.runtime.stabilize",
+        target = target,
+        result = result,
+        before = before,
+        after = after,
+    }
+    local ok_write, write_detail = write_runtime_item_report("world_items_runtime_stabilize", report, lines)
+    if not ok_write then return false, write_detail end
+    if result.ok ~= true then return false, tostring(result.error or "stabilize failed") end
+    return true, string.format("actions=%d failures=%d wrote %s",
+        #(result.actions or {}), #(result.failures or {}), write_detail)
 end
 
 local function get_pawn()
@@ -654,5 +1132,10 @@ function M.unlock_all_spells(_args_str)
         materialised, missed))
     return true, string.format("unlocked=%d unresolved=%d", materialised, missed)
 end
+
+-- Internal helpers promoted for Build Service capture/replay. They stay
+-- underscore-prefixed because they are not public console verbs.
+M._is_runtime_world_item = is_runtime_world_item
+M._enumerate_runtime_world_items = enumerate_runtime_world_items
 
 return M

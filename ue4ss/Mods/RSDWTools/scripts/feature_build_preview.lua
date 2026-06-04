@@ -780,6 +780,15 @@ function M.preview(args_str)
     local pieces, perr = feature_buildings._parse_pieces(body)
     if not pieces then return false, "JSON parse: " .. tostring(perr) end
     if #pieces == 0 then return false, "no pieces in JSON" end
+    local items = {}
+    if feature_buildings._parse_items then
+        local parsed_items, ierr = feature_buildings._parse_items(body)
+        if parsed_items then
+            items = parsed_items
+        else
+            print("[RSDWTools] build.preview.preview: item parse warning: " .. tostring(ierr))
+        end
+    end
 
     -- Honour the user-picked anchor by promoting the matching piece
     -- to position 1. We try piece_id first (per-instance, unique),
@@ -888,15 +897,16 @@ function M.preview(args_str)
     M._session = {
         name        = name,
         pieces      = pieces,
+        items       = items,
         first       = first,
         idx_by_pd   = idx_by_pd,
         bmc         = bmc,
     }
 
     print(string.format(
-        "[RSDWTools] build.preview.preview: session armed, %d pieces queued ; aim with the engine's reticle preview, then run build.preview.commit (or build.preview.cancel)",
-        #pieces))
-    return true, string.format("armed pieces=%d", #pieces)
+        "[RSDWTools] build.preview.preview: session armed, %d pieces queued, %d items queued ; aim with the engine's reticle preview, then run build.preview.commit (or build.preview.cancel)",
+        #pieces, #items))
+    return true, string.format("armed pieces=%d items=%d", #pieces, #items)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1255,17 +1265,13 @@ function M.commit(args_str)
             local dy = p.y - (first.y or 0)
             local dz = p.z - (first.z or 0)
             local rx, ry = rotate_xy(dx, dy, cos_t, sin_t)
-            local world_yaw_rad = ((p.yaw or 0) + theta_deg) * math.pi / 180.0
-            local half = world_yaw_rad * 0.5
-            local xform = {
-                Rotation    = { X = 0, Y = 0, Z = math.sin(half), W = math.cos(half) },
-                Translation = {
-                    X = (anchor_loc.X or 0) + rx,
-                    Y = (anchor_loc.Y or 0) + ry,
-                    Z = (anchor_loc.Z or 0) + dz,
-                },
-                Scale3D     = { X = 1, Y = 1, Z = 1 },
-            }
+            local world_x = (anchor_loc.X or 0) + rx
+            local world_y = (anchor_loc.Y or 0) + ry
+            local world_z = (anchor_loc.Z or 0) + dz
+            local xform = feature_buildings._make_transform(
+                world_x, world_y, world_z,
+                p.pitch, (p.yaw or 0) + theta_deg, p.roll,
+                p.scale_x, p.scale_y, p.scale_z)
             local ok = pcall(function()
                 bmc:Server_SpawnBuilding(pd_idx, xform, spawn_ghost, empty_inv)
             end)
@@ -1273,14 +1279,24 @@ function M.commit(args_str)
         end
     end
 
+    local item_counts = { sent = 0, failed = 0, skipped = 0 }
+    if feature_buildings._replay_items_relative then
+        item_counts = feature_buildings._replay_items_relative(
+            sess.items or {}, first, anchor_loc, theta_deg)
+    end
+
     print(string.format(
-        "[RSDWTools] build.preview.commit: replayed sent=%d failed=%d skipped=%d",
-        sent, failed, skipped))
+        "[RSDWTools] build.preview.commit: replayed sent=%d failed=%d skipped=%d items_sent=%d items_failed=%d items_skipped=%d",
+        sent, failed, skipped, item_counts.sent, item_counts.failed, item_counts.skipped))
     clear_session()
 
     local suffix = ghost_mode and " (spawned as persistent ghosts)" or ""
-    return true, string.format("sent=%d failed=%d skipped=%d%s",
-        sent, failed, skipped, suffix)
+    local item_suffix = ((sess.items and #sess.items or 0) > 0)
+        and string.format(" items_sent=%d items_failed=%d items_skipped=%d",
+            item_counts.sent, item_counts.failed, item_counts.skipped)
+        or ""
+    return true, string.format("sent=%d failed=%d skipped=%d%s%s",
+        sent, failed, skipped, item_suffix, suffix)
 end
 
 -- ---------------------------------------------------------------------------

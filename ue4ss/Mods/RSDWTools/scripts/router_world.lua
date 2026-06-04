@@ -1092,6 +1092,30 @@ function M.try_handle(line)
             if ok then return true, true, "ok world.items.give " .. tostring(detail) end
             return true, false, "world.items.give failed: " .. tostring(detail)
         end
+        -- world.items.runtime.snapshot [lastspawned|<actor_name>]
+        --   Diagnostics for BP_RuntimeSpawnedWorldItem persistence/physics.
+        if line == "world.items.runtime.snapshot" or line:sub(1, #"world.items.runtime.snapshot ") == "world.items.runtime.snapshot " then
+            local ok, detail = feature_inventory.runtime_snapshot(arg_after("world.items.runtime.snapshot"))
+            if ok then return true, true, "ok world.items.runtime.snapshot " .. tostring(detail) end
+            return true, false, "world.items.runtime.snapshot failed: " .. tostring(detail)
+        end
+        if line == "world.items.snapshot" or line:sub(1, #"world.items.snapshot ") == "world.items.snapshot " then
+            local ok, detail = feature_inventory.runtime_snapshot(arg_after("world.items.snapshot"))
+            if ok then return true, true, "ok world.items.snapshot " .. tostring(detail) end
+            return true, false, "world.items.snapshot failed: " .. tostring(detail)
+        end
+        -- world.items.runtime.stabilize [lastspawned|<actor_name>] [confirm]
+        --   Marks a runtime world item as a settled/persistent Oculus placement.
+        if line == "world.items.runtime.stabilize" or line:sub(1, #"world.items.runtime.stabilize ") == "world.items.runtime.stabilize " then
+            local ok, detail = feature_inventory.runtime_stabilize(arg_after("world.items.runtime.stabilize"))
+            if ok then return true, true, "ok world.items.runtime.stabilize " .. tostring(detail) end
+            return true, false, "world.items.runtime.stabilize failed: " .. tostring(detail)
+        end
+        if line == "world.items.stabilize" or line:sub(1, #"world.items.stabilize ") == "world.items.stabilize " then
+            local ok, detail = feature_inventory.runtime_stabilize(arg_after("world.items.stabilize"))
+            if ok then return true, true, "ok world.items.stabilize " .. tostring(detail) end
+            return true, false, "world.items.stabilize failed: " .. tostring(detail)
+        end
         -- world.recipes.unlock <RECIPE_AssetName>
         --   Same resolution path as world.items.give, then calls
         --   pc.BP_Components_Progress:UnlockRecipes({recipe}). Backs the

@@ -42,6 +42,9 @@
 local M = {}
 
 local feature_actor = require("feature_actor")
+local feature_field = require("feature_field")
+local feature_inventory = require("feature_inventory")
+local feature_player_spawn = require("feature_player_spawn")
 local mod_paths = require("mod_paths")
 
 local function is_valid(obj)
@@ -164,10 +167,9 @@ local function snapshot_piece(actor)
         rec.x = loc.X; rec.y = loc.Y; rec.z = loc.Z
     end
 
-    -- Full rotation -- captured for safety-net diagnostics. The replay
-    -- path will only use yaw because FClientVisibleBuildingPieceState
-    -- only stores yaw ; if pitch/roll show non-zero in the dumps we
-    -- need to revisit.
+    -- Full rotation. yaw remains the compatibility field used by old
+    -- captures; pitch/roll allow SPUD-backed/interactable actors to
+    -- replay with their live transform when the game supports it.
     local rot
     if actor.K2_GetActorRotation then
         pcall(function() rot = actor:K2_GetActorRotation() end)
@@ -176,11 +178,14 @@ local function snapshot_piece(actor)
         pcall(function() rot = actor:GetActorRotation() end)
     end
     if rot then
+        rec.pitch = rot.Pitch
         rec.yaw = rot.Yaw
+        rec.roll = rot.Roll
         rec.actual_rot = { pitch = rot.Pitch, roll = rot.Roll, yaw = rot.Yaw }
     end
 
-    -- Scale -- safety-net only ; build pieces are expected to be uniform 1.
+    -- Scale. Structural pieces usually persist unit scale only, but
+    -- interactable/SPUD-backed building actors can carry full scale.
     local scale
     if actor.K2_GetActorScale3D then
         pcall(function() scale = actor:K2_GetActorScale3D() end)
@@ -189,6 +194,9 @@ local function snapshot_piece(actor)
         pcall(function() scale = actor:GetActorScale3D() end)
     end
     if scale then
+        rec.scale_x = scale.X
+        rec.scale_y = scale.Y
+        rec.scale_z = scale.Z
         rec.actual_scale = { x = scale.X, y = scale.Y, z = scale.Z }
     end
 
@@ -480,9 +488,133 @@ local function encode_piece(rec)
         '"x":' .. json_num(rec.x),
         '"y":' .. json_num(rec.y),
         '"z":' .. json_num(rec.z),
+        '"pitch":' .. json_num(rec.pitch),
         '"yaw":' .. json_num(rec.yaw),
+        '"roll":' .. json_num(rec.roll),
+        '"scale_x":' .. json_num(rec.scale_x),
+        '"scale_y":' .. json_num(rec.scale_y),
+        '"scale_z":' .. json_num(rec.scale_z),
+        '"spud_guid":' .. json_str_or_null(rec.spud_guid),
         '"stability":' .. json_num(rec.stability),
         '"is_ghosted":' .. json_bool(rec.is_ghosted),
+    }
+    return "{" .. table.concat(parts, ",") .. "}"
+end
+
+local function full_name(obj)
+    if not is_valid(obj) or not obj.GetFullName then return nil end
+    local ok, value = pcall(function() return obj:GetFullName() end)
+    if ok and type(value) == "string" and value ~= "" then return value end
+    return nil
+end
+
+local function object_short_name(obj)
+    if not is_valid(obj) then return nil end
+    local name = feature_actor.short_name_of(obj)
+    if name and name ~= "" then return name end
+    if obj.GetName then
+        local ok, value = pcall(function() return obj:GetName() end)
+        if ok and type(value) == "string" and value ~= "" then return value end
+    end
+    return nil
+end
+
+local function object_path(obj)
+    local full = full_name(obj)
+    if not full then return nil end
+    local path = full:match("^%S+%s+(.+)$") or full
+    path = tostring(path or ""):match("^%s*(.-)%s*$") or ""
+    path = path:gsub("^'", ""):gsub("'$", "")
+    if path == "" then return nil end
+    return path
+end
+
+local function read_world_item_data(actor)
+    if not is_valid(actor) then return nil end
+    for _, method_name in ipairs({ "BP_GetItemData", "GetSpawnedItemData", "GetPrimaryAssociatedItemData" }) do
+        local fn = actor[method_name]
+        if fn then
+            local ok, value = pcall(function() return fn(actor) end)
+            if ok and is_valid(value) then return value, method_name end
+        end
+    end
+    for _, field_name in ipairs({ "ItemData", "SpawnedItemData", "PrimaryAssociatedItemData" }) do
+        local ok, value = pcall(function() return actor[field_name] end)
+        if ok and is_valid(value) then return value, field_name end
+    end
+    return nil
+end
+
+local function read_item_count(actor)
+    if not is_valid(actor) then return 1 end
+    for _, field_name in ipairs({ "Count", "ItemCount", "StackCount", "Quantity", "Amount" }) do
+        local ok, value = pcall(function() return actor[field_name] end)
+        local n = ok and tonumber(value) or nil
+        if n and n >= 1 then return math.floor(n) end
+    end
+    return 1
+end
+
+local function actor_class_full_name(actor)
+    if not is_valid(actor) then return nil end
+    local cls
+    pcall(function() cls = actor:GetClass() end)
+    return full_name(cls)
+end
+
+local function snapshot_runtime_item(actor)
+    if not is_valid(actor) then return nil, "invalid actor" end
+    if feature_inventory._is_runtime_world_item
+       and not feature_inventory._is_runtime_world_item(actor) then
+        return nil, "not runtime item"
+    end
+
+    local item_data, item_source = read_world_item_data(actor)
+    if not is_valid(item_data) then
+        return nil, "no readable ItemData"
+    end
+
+    local loc = feature_actor.actor_location(actor)
+    if not loc then return nil, "no actor location" end
+    local rot = feature_actor.actor_rotation(actor) or { Pitch = 0, Yaw = 0, Roll = 0 }
+    local scale = feature_actor.get_actor_scale3d(actor) or { X = 1, Y = 1, Z = 1 }
+
+    return {
+        actor_name      = object_short_name(actor),
+        actor_class     = actor_class_full_name(actor),
+        item_asset_name = object_short_name(item_data),
+        item_asset_path = object_path(item_data),
+        item_source     = item_source,
+        count           = read_item_count(actor),
+        x               = loc.X,
+        y               = loc.Y,
+        z               = loc.Z,
+        pitch           = rot.Pitch,
+        yaw             = rot.Yaw,
+        roll            = rot.Roll,
+        scale_x         = scale.X,
+        scale_y         = scale.Y,
+        scale_z         = scale.Z,
+    }
+end
+
+local function encode_item(rec)
+    local parts = {
+        '"actor_name":' .. json_str_or_null(rec.actor_name),
+        '"actor_class":' .. json_str_or_null(rec.actor_class),
+        '"item_asset_name":' .. json_str_or_null(rec.item_asset_name),
+        '"item_asset_path":' .. json_str_or_null(rec.item_asset_path),
+        '"item_source":' .. json_str_or_null(rec.item_source),
+        '"count":' .. json_num(rec.count),
+        '"x":' .. json_num(rec.x),
+        '"y":' .. json_num(rec.y),
+        '"z":' .. json_num(rec.z),
+        '"pitch":' .. json_num(rec.pitch),
+        '"yaw":' .. json_num(rec.yaw),
+        '"roll":' .. json_num(rec.roll),
+        '"scale_x":' .. json_num(rec.scale_x),
+        '"scale_y":' .. json_num(rec.scale_y),
+        '"scale_z":' .. json_num(rec.scale_z),
     }
     return "{" .. table.concat(parts, ",") .. "}"
 end
@@ -529,6 +661,20 @@ end
 function M.export(args_str)
     local raw = tostring(args_str or ""):gsub("^%s+", ""):gsub("%s+$", "")
     local ghosts_only = false
+    local include_items = false
+    -- Strip a trailing "include_items" / "items" token before anchor
+    -- parsing so WPF can append it after anchor metadata.
+    local stripped_i, n_i = raw:gsub("%s+[iI][nN][cC][lL][uU][dD][eE]_[iI][tT][eE][mM][sS]%s*$", "")
+    if n_i > 0 then
+        include_items = true
+        raw = stripped_i
+    else
+        local stripped_items, n_items = raw:gsub("%s+[iI][tT][eE][mM][sS]%s*$", "")
+        if n_items > 0 then
+            include_items = true
+            raw = stripped_items
+        end
+    end
     -- Strip a trailing "ghosts_only" token (case-insensitive) so the
     -- name parser doesn't fold it into the filename.
     local stripped, n_replaced = raw:gsub("%s+[gG][hH][oO][sS][tT][sS]_[oO][nN][lL][yY]%s*$", "")
@@ -638,12 +784,42 @@ function M.export(args_str)
         end
     end
 
+    local items = {}
+    local item_skipped = 0
+    if include_items then
+        local enumerator = feature_inventory._enumerate_runtime_world_items
+        if type(enumerator) == "function" then
+            local runtime_items = enumerator()
+            for i = 1, #runtime_items do
+                local rec, why = snapshot_runtime_item(runtime_items[i])
+                if rec
+                   and (type(rec.item_asset_name) == "string" or type(rec.item_asset_path) == "string")
+                   and type(rec.x) == "number"
+                   and type(rec.y) == "number"
+                   and type(rec.z) == "number" then
+                    items[#items + 1] = rec
+                else
+                    item_skipped = item_skipped + 1
+                    print(string.format("[RSDWTools] buildings.export: skipped runtime item %d (%s)",
+                        i, tostring(why or "missing required fields")))
+                end
+            end
+        else
+            item_skipped = item_skipped + 1
+            print("[RSDWTools] buildings.export: runtime item enumerator unavailable")
+        end
+    end
+
     local body_parts = {}
     body_parts[#body_parts + 1] = '{"schema":"rsdwtools.buildings.v1"'
     body_parts[#body_parts + 1] = ',"name":' .. json_escape_str(name)
     body_parts[#body_parts + 1] = ',"generated_unix":' .. tostring(os.time())
     body_parts[#body_parts + 1] = ',"count":' .. tostring(#kept)
     body_parts[#body_parts + 1] = ',"skipped":' .. tostring(skipped)
+    if include_items then
+        body_parts[#body_parts + 1] = ',"item_count":' .. tostring(#items)
+        body_parts[#body_parts + 1] = ',"item_skipped":' .. tostring(item_skipped)
+    end
     if anchor_idx then
         body_parts[#body_parts + 1] = ',"anchor_piece_data_index":' .. tostring(anchor_idx)
     end
@@ -655,6 +831,13 @@ function M.export(args_str)
         if i > 1 then body_parts[#body_parts + 1] = "," end
         body_parts[#body_parts + 1] = encode_piece(kept[i])
     end
+    if include_items then
+        body_parts[#body_parts + 1] = '],"items":['
+        for i = 1, #items do
+            if i > 1 then body_parts[#body_parts + 1] = "," end
+            body_parts[#body_parts + 1] = encode_item(items[i])
+        end
+    end
     body_parts[#body_parts + 1] = ']}'
     local body = table.concat(body_parts)
 
@@ -663,14 +846,19 @@ function M.export(args_str)
         return false, "write failed: " .. tostring(detail)
     end
     if ghosts_only then
-        print(string.format("[RSDWTools] buildings.export: wrote %d ghost pieces (filtered_out=%d skipped=%d) -> %s",
-            #kept, filtered_out, skipped, out_path))
-        return true, string.format("count=%d filtered_out=%d skipped=%d path=%s",
-            #kept, filtered_out, skipped, out_path)
+        print(string.format("[RSDWTools] buildings.export: wrote %d ghost pieces (filtered_out=%d skipped=%d items=%d item_skipped=%d) -> %s",
+            #kept, filtered_out, skipped, #items, item_skipped, out_path))
+        return true, string.format("count=%d filtered_out=%d skipped=%d%s path=%s",
+            #kept, filtered_out, skipped,
+            include_items and string.format(" items=%d item_skipped=%d", #items, item_skipped) or "",
+            out_path)
     end
-    print(string.format("[RSDWTools] buildings.export: wrote %d pieces (skipped %d) -> %s",
-        #kept, skipped, out_path))
-    return true, string.format("count=%d skipped=%d path=%s", #kept, skipped, out_path)
+    print(string.format("[RSDWTools] buildings.export: wrote %d pieces (skipped %d items=%d item_skipped=%d) -> %s",
+        #kept, skipped, #items, item_skipped, out_path))
+    return true, string.format("count=%d skipped=%d%s path=%s",
+        #kept, skipped,
+        include_items and string.format(" items=%d item_skipped=%d", #items, item_skipped) or "",
+        out_path)
 end
 
 -- ===========================================================================
@@ -708,12 +896,15 @@ local function json_unescape(s)
              :gsub('\\"', '"'):gsub("\\\\", "\\"))
 end
 
-local function extract_pieces_array(body)
-    -- Find "pieces":[ ... ] by paren-matching square brackets.
-    local start_i = body:find('"pieces"%s*:%s*%[')
-    if not start_i then return nil, "no pieces array in JSON" end
+local function extract_named_array(body, key, required)
+    -- Find "<key>":[ ... ] by paren-matching square brackets.
+    local start_i = body:find('"' .. key .. '"%s*:%s*%[')
+    if not start_i then
+        if required == false then return nil, nil end
+        return nil, "no " .. tostring(key) .. " array in JSON"
+    end
     local arr_open = body:find("%[", start_i)
-    if not arr_open then return nil, "malformed pieces array" end
+    if not arr_open then return nil, "malformed " .. tostring(key) .. " array" end
 
     local depth = 0
     local i = arr_open
@@ -737,7 +928,7 @@ local function extract_pieces_array(body)
         end
         i = i + 1
     end
-    if not arr_close then return nil, "unterminated pieces array" end
+    if not arr_close then return nil, "unterminated " .. tostring(key) .. " array" end
     return body:sub(arr_open + 1, arr_close - 1)
 end
 
@@ -803,7 +994,7 @@ local function field_bool(obj_body, key)
 end
 
 local function parse_pieces(body)
-    local arr, err = extract_pieces_array(body)
+    local arr, err = extract_named_array(body, "pieces", true)
     if not arr then return nil, err end
     local objs = split_objects(arr)
     local out = {}
@@ -817,9 +1008,46 @@ local function parse_pieces(body)
             x                = field_num(o, "x"),
             y                = field_num(o, "y"),
             z                = field_num(o, "z"),
+            pitch            = field_num(o, "pitch"),
             yaw              = field_num(o, "yaw"),
+            roll             = field_num(o, "roll"),
+            scale_x          = field_num(o, "scale_x"),
+            scale_y          = field_num(o, "scale_y"),
+            scale_z          = field_num(o, "scale_z"),
+            spud_guid        = field_str(o, "spud_guid"),
             stability        = field_num(o, "stability"),
             is_ghosted       = field_bool(o, "is_ghosted"),
+        }
+    end
+    return out
+end
+
+local function parse_items(body)
+    local arr, err = extract_named_array(body, "items", false)
+    if not arr then
+        if err then return nil, err end
+        return {}
+    end
+    local objs = split_objects(arr)
+    local out = {}
+    for i = 1, #objs do
+        local o = objs[i]
+        out[#out + 1] = {
+            actor_name      = field_str(o, "actor_name"),
+            actor_class     = field_str(o, "actor_class"),
+            item_asset_name = field_str(o, "item_asset_name"),
+            item_asset_path = field_str(o, "item_asset_path"),
+            item_source     = field_str(o, "item_source"),
+            count           = field_num(o, "count"),
+            x               = field_num(o, "x"),
+            y               = field_num(o, "y"),
+            z               = field_num(o, "z"),
+            pitch           = field_num(o, "pitch"),
+            yaw             = field_num(o, "yaw"),
+            roll            = field_num(o, "roll"),
+            scale_x         = field_num(o, "scale_x"),
+            scale_y         = field_num(o, "scale_y"),
+            scale_z         = field_num(o, "scale_z"),
         }
     end
     return out
@@ -846,22 +1074,189 @@ local function get_local_pc_and_bmc()
 end
 
 -- ---------------------------------------------------------------------------
--- Build an FTransform-shaped Lua table from x/y/z and yaw. UE4SS will
--- coerce a table with the same field names as the struct layout into
--- the parameter. FTransform = { Rotation: FQuat, Translation: FVector,
--- Scale3D: FVector }. Yaw-only rotation -> only Z and W components of
--- the quaternion are non-zero.
+-- Build an FTransform-shaped Lua table from x/y/z + full rotator +
+-- scale. UE4SS will coerce a table with the same field names as the
+-- struct layout into the parameter. Old JSON that only has yaw falls
+-- back to pitch=0, roll=0, scale=1.
 -- ---------------------------------------------------------------------------
-local function make_transform(x, y, z, yaw_deg)
-    local yaw_rad = (yaw_deg or 0) * math.pi / 180.0
-    local half = yaw_rad * 0.5
-    local qz = math.sin(half)
-    local qw = math.cos(half)
+local function rotator_to_quat(pitch_deg, yaw_deg, roll_deg)
+    local pitch = (pitch_deg or 0) * math.pi / 180.0
+    local yaw = (yaw_deg or 0) * math.pi / 180.0
+    local roll = (roll_deg or 0) * math.pi / 180.0
+    local cy, sy = math.cos(yaw * 0.5), math.sin(yaw * 0.5)
+    local cp, sp = math.cos(pitch * 0.5), math.sin(pitch * 0.5)
+    local cr, sr = math.cos(roll * 0.5), math.sin(roll * 0.5)
     return {
-        Rotation    = { X = 0, Y = 0, Z = qz, W = qw },
-        Translation = { X = x or 0, Y = y or 0, Z = z or 0 },
-        Scale3D     = { X = 1, Y = 1, Z = 1 },
+        -- Match Unreal's FRotator::Quaternion sign convention. Using
+        -- the usual math-library XYZ convention flips Pitch/Roll while
+        -- leaving Yaw looking correct.
+        X = cr * sp * sy - sr * cp * cy,
+        Y = -cr * sp * cy - sr * cp * sy,
+        Z = cr * cp * sy - sr * sp * cy,
+        W = cr * cp * cy + sr * sp * sy,
     }
+end
+
+local function make_transform(x, y, z, pitch_deg, yaw_deg, roll_deg, sx, sy, sz)
+    return {
+        Rotation    = rotator_to_quat(pitch_deg, yaw_deg, roll_deg),
+        Translation = { X = x or 0, Y = y or 0, Z = z or 0 },
+        Scale3D     = { X = sx or 1, Y = sy or 1, Z = sz or 1 },
+    }
+end
+
+local function normalize_count(v)
+    local n = tonumber(v) or 1
+    if n < 1 then n = 1 end
+    if n > 9999 then n = 9999 end
+    return math.floor(n)
+end
+
+local function class_path_from_full(full)
+    if type(full) ~= "string" or full == "" then return nil end
+    local path = full:match("^%S+%s+(.+)$") or full
+    path = tostring(path or ""):match("^%s*(.-)%s*$") or ""
+    path = path:gsub("^'", ""):gsub("'$", "")
+    if path == "" then return nil end
+    return path
+end
+
+local function apply_actor_transform(actor, rec)
+    if not is_valid(actor) or type(rec) ~= "table" then
+        return false, "invalid actor/record"
+    end
+    feature_actor.force_actor_movable(actor)
+    pcall(function() actor.bRegisterAsRuntimeSpawned = true end)
+
+    local loc = { X = rec.x or 0, Y = rec.y or 0, Z = rec.z or 0 }
+    local rot = { Pitch = rec.pitch or 0, Yaw = rec.yaw or 0, Roll = rec.roll or 0 }
+    local scale = {
+        X = rec.scale_x or 1,
+        Y = rec.scale_y or 1,
+        Z = rec.scale_z or 1,
+    }
+
+    local ok_loc, loc_err = feature_actor.move_actor(actor, loc)
+    if not ok_loc then return false, "move failed: " .. tostring(loc_err) end
+    feature_actor.set_actor_rotation(actor, rot)
+    feature_actor.set_actor_scale3d(actor, scale)
+    return true
+end
+
+local function spawn_item_record(rec)
+    if type(rec) ~= "table" then return false, "bad item record" end
+    if type(rec.x) ~= "number" or type(rec.y) ~= "number" or type(rec.z) ~= "number" then
+        return false, "item missing x/y/z"
+    end
+    local count = normalize_count(rec.count)
+    local item_name = rec.item_asset_name
+    local item_path = rec.item_asset_path
+    local ok_spawn, spawn_detail = false, nil
+
+    if type(item_name) == "string" and item_name ~= "" then
+        ok_spawn, spawn_detail = feature_inventory.give(item_name .. " " .. tostring(count))
+    end
+    if not ok_spawn and type(item_path) == "string" and item_path ~= "" then
+        local actor_class_path = class_path_from_full(rec.actor_class)
+        local spawn_args = item_path .. " " .. tostring(count)
+        if actor_class_path then spawn_args = spawn_args .. " " .. actor_class_path end
+        ok_spawn, spawn_detail = feature_player_spawn.spawn_item(spawn_args)
+    end
+    if not ok_spawn then
+        return false, "spawn failed: " .. tostring(spawn_detail or "no item identity")
+    end
+
+    local actor
+    pcall(function() actor = feature_field.resolve_root("lastspawned") end)
+    if not is_valid(actor) then
+        return false, "spawned item but lastspawned was not resolvable"
+    end
+
+    local ok_xform, xform_detail = apply_actor_transform(actor, rec)
+    if not ok_xform then
+        return false, xform_detail
+    end
+
+    local ok_stable, stable_result = feature_inventory.stabilize_runtime_world_item(actor)
+    if not ok_stable then
+        local err = stable_result
+        if type(stable_result) == "table" then
+            err = stable_result.error or stable_result.detail or stable_result.message
+        end
+        return false, "stabilize failed after spawn: " .. tostring(err)
+    end
+
+    local actions = 0
+    local failures = 0
+    if type(stable_result) == "table" then
+        if type(stable_result.actions) == "table" then actions = #stable_result.actions end
+        if type(stable_result.failures) == "table" then failures = #stable_result.failures end
+    end
+    return true, tostring(spawn_detail or "spawned")
+        .. string.format(" ; stabilized actions=%d failures=%d", actions, failures)
+end
+
+local function replay_items_absolute(items)
+    if type(items) ~= "table" or #items == 0 then
+        return { sent = 0, failed = 0, skipped = 0 }
+    end
+    local counts = { sent = 0, failed = 0, skipped = 0 }
+    for i = 1, #items do
+        local rec = items[i]
+        local ok, detail = spawn_item_record(rec)
+        if ok then
+            counts.sent = counts.sent + 1
+            print(string.format("[RSDWTools] buildings.import: item[%d] spawned %s x%d at (%.1f, %.1f, %.1f) ; %s",
+                i, tostring(rec.item_asset_name or rec.item_asset_path), normalize_count(rec.count),
+                rec.x or 0, rec.y or 0, rec.z or 0, tostring(detail or "")))
+        else
+            counts.failed = counts.failed + 1
+            print(string.format("[RSDWTools] buildings.import: item[%d] failed (%s)",
+                i, tostring(detail)))
+        end
+    end
+    return counts
+end
+
+local function rotate_record_relative(rec, origin, anchor_loc, theta_deg)
+    if type(rec) ~= "table" or type(origin) ~= "table" or not anchor_loc then return nil end
+    if type(rec.x) ~= "number" or type(rec.y) ~= "number" or type(rec.z) ~= "number" then return nil end
+    local theta_rad = (theta_deg or 0) * math.pi / 180.0
+    local cos_t, sin_t = math.cos(theta_rad), math.sin(theta_rad)
+    local dx = rec.x - (origin.x or 0)
+    local dy = rec.y - (origin.y or 0)
+    local dz = rec.z - (origin.z or 0)
+    local rx = dx * cos_t - dy * sin_t
+    local ry = dx * sin_t + dy * cos_t
+    local out = {}
+    for k, v in pairs(rec) do out[k] = v end
+    out.x = (anchor_loc.X or 0) + rx
+    out.y = (anchor_loc.Y or 0) + ry
+    out.z = (anchor_loc.Z or 0) + dz
+    out.yaw = (rec.yaw or 0) + (theta_deg or 0)
+    return out
+end
+
+local function replay_items_relative(items, origin, anchor_loc, theta_deg)
+    if type(items) ~= "table" or #items == 0 then
+        return { sent = 0, failed = 0, skipped = 0 }
+    end
+    local transformed = {}
+    local counts = { sent = 0, failed = 0, skipped = 0 }
+    for i = 1, #items do
+        local rec = rotate_record_relative(items[i], origin, anchor_loc, theta_deg)
+        if rec then
+            transformed[#transformed + 1] = rec
+        else
+            counts.skipped = counts.skipped + 1
+            print(string.format("[RSDWTools] buildings.import: item[%d] skipped (bad relative transform)", i))
+        end
+    end
+    local spawned = replay_items_absolute(transformed)
+    counts.sent = counts.sent + spawned.sent
+    counts.failed = counts.failed + spawned.failed
+    counts.skipped = counts.skipped + spawned.skipped
+    return counts
 end
 
 -- ---------------------------------------------------------------------------
@@ -899,6 +1294,10 @@ function M.import(args_str)
     if #pieces == 0 then
         return false, "no pieces in JSON"
     end
+    local items, ierr = parse_items(body)
+    if not items then
+        return false, "JSON parse items: " .. tostring(ierr)
+    end
 
     local _pc, bmc, err = get_local_pc_and_bmc()
     if not bmc then
@@ -935,7 +1334,9 @@ function M.import(args_str)
             print(string.format("  [%d] skipped (missing required fields)", i))
             fail_count = fail_count + 1
         else
-            local xform = make_transform(p.x, p.y, p.z, p.yaw)
+            local xform = make_transform(p.x, p.y, p.z,
+                p.pitch, p.yaw, p.roll,
+                p.scale_x, p.scale_y, p.scale_z)
             local ok = pcall(function()
                 bmc:Server_SpawnBuilding(p.piece_data_index, xform, spawn_ghost, empty_inv)
             end)
@@ -951,12 +1352,18 @@ function M.import(args_str)
         end
     end
 
-    print(string.format("[RSDWTools] buildings.import: done  sent=%d failed=%d",
-        ok_count, fail_count))
+    local item_counts = replay_items_absolute(items)
+
+    print(string.format("[RSDWTools] buildings.import: done  sent=%d failed=%d items_sent=%d items_failed=%d items_skipped=%d",
+        ok_count, fail_count, item_counts.sent, item_counts.failed, item_counts.skipped))
 
     local suffix = ghost_mode and " (spawned as persistent ghosts)" or ""
-    return true, string.format("sent=%d failed=%d%s (server may still reject ; check world)",
-        ok_count, fail_count, suffix)
+    local item_suffix = (#items > 0)
+        and string.format(" items_sent=%d items_failed=%d items_skipped=%d",
+            item_counts.sent, item_counts.failed, item_counts.skipped)
+        or ""
+    return true, string.format("sent=%d failed=%d%s%s (server may still reject ; check world)",
+        ok_count, fail_count, item_suffix, suffix)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1921,8 +2328,12 @@ end
 -- Public re-exports for sibling modules (feature_build_preview).
 -- Kept underscore-prefixed to signal "internal helper, not a router verb".
 M._parse_pieces = parse_pieces
+M._parse_items = parse_items
 M._capture_path_for = export_path_for
 M._sanitize_name = sanitize_name
 M._get_local_pc_and_bmc = get_local_pc_and_bmc
+M._make_transform = make_transform
+M._replay_items_absolute = replay_items_absolute
+M._replay_items_relative = replay_items_relative
 
 return M
