@@ -517,8 +517,14 @@ function M.require_state(args_text)
         ok = state.preview == true
     elseif target == "repair" then
         ok = state.repair == true
+    elseif target == "rotation" then
+        local rotation = package.loaded["feature_oculus_rotation"]
+        ok = state.oculus == true and type(rotation) == "table" and rotation.is_active and rotation.is_active() == true
+    elseif target == "scale" then
+        local scale = package.loaded["feature_oculus_scale"]
+        ok = state.oculus == true and type(scale) == "table" and scale.is_active and scale.is_active() == true
     else
-        return false, "usage: camera.oculus.require <active|inactive|preview|repair>"
+        return false, "usage: camera.oculus.require <active|inactive|preview|repair|rotation|scale>"
     end
 
     if ok then return true, "required " .. target .. " satisfied; " .. state_line(state) end

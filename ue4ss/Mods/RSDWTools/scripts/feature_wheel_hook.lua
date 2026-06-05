@@ -35,10 +35,13 @@ local M = {}
 
 -- token -> array of { mod_fkeys = {fkey...}, fn = function }
 M._cbs = { up = {}, down = {}, left_mouse = {}, right_mouse = {}, middle_mouse = {} }
+M._pressed_latch = { left_mouse = false, right_mouse = false, middle_mouse = false }
 M._generation = 0
 M._loop_started = false
+M._driver = nil
 
 local POLL_ORDER = { "up", "down", "left_mouse", "right_mouse", "middle_mouse" }
+local MOUSE_TOKENS = { left_mouse = true, right_mouse = true, middle_mouse = true }
 local POLLED_KEY_NAMES = {
     up = "MouseScrollUp",
     down = "MouseScrollDown",
@@ -165,6 +168,22 @@ local function has_bindings()
     return false
 end
 
+local function update_press_latch(pc, token, key)
+    if not MOUSE_TOKENS[token] then return end
+    if not pc or not pc.IsInputKeyDown then return end
+    local ok, down = pcall(function() return pc:IsInputKeyDown(key) end)
+    if ok and down ~= true then
+        M._pressed_latch[token] = false
+    end
+end
+
+local function should_dispatch_press(token)
+    if not MOUSE_TOKENS[token] then return true end
+    if M._pressed_latch[token] then return false end
+    M._pressed_latch[token] = true
+    return true
+end
+
 local function tick()
     if not has_bindings() then
         return -- registry empty ; cheapest possible path
@@ -176,8 +195,9 @@ local function tick()
         if has_enabled_entry(list) then
             local key = poll_key(token)
             if key then
+                update_press_latch(pc, token, key)
                 local ok, pressed = pcall(function() return pc:WasInputKeyJustPressed(key) end)
-                if ok and pressed then dispatch(pc, list) end
+                if ok and pressed and should_dispatch_press(token) then dispatch(pc, list) end
             end
         end
     end
@@ -194,11 +214,29 @@ local POLL_MS = 4   -- ~250Hz. WasInputKeyJustPressed is true for
 
 local function ensure_loop()
     if M._loop_started then return end
+    if EngineTickAvailable == true and type(LoopInGameThreadAfterFrames) == "function" then
+        local ok, handle_or_err = pcall(function()
+            return LoopInGameThreadAfterFrames(1, function()
+                local ok_tick, err = pcall(tick)
+                if not ok_tick then
+                    print("[RSDWTools.wheel] engine tick failed: " .. tostring(err))
+                end
+            end)
+        end)
+        if ok and handle_or_err then
+            M._loop_started = true
+            M._driver = "engine_tick"
+            print("[RSDWTools.wheel] poll loop started on engine tick.")
+            return
+        end
+        print("[RSDWTools.wheel] engine tick unavailable: " .. tostring(handle_or_err))
+    end
     if not LoopAsync then
         print("[RSDWTools.wheel] LoopAsync unavailable -- wheel bindings disabled.")
         return
     end
     M._loop_started = true
+    M._driver = "loop_async"
     LoopAsync(POLL_MS, function()
         tick()
         return false  -- never exit
@@ -211,6 +249,7 @@ end
 function M.bump_generation()
     M._generation = M._generation + 1
     for _, token in ipairs(POLL_ORDER) do M._cbs[token] = {} end
+    for token, _ in pairs(MOUSE_TOKENS) do M._pressed_latch[token] = false end
 end
 
 -- direction:    "up", "down", WHEEL_*, or *_MOUSE_BUTTON
@@ -250,6 +289,13 @@ function M.binding_count()
     local count = 0
     for _, token in ipairs(POLL_ORDER) do count = count + #M._cbs[token] end
     return count
+end
+
+function M.status()
+    return true, string.format("driver=%s bindings=%d generation=%d",
+        tostring(M._driver or "none"),
+        M.binding_count(),
+        tonumber(M._generation) or 0)
 end
 
 return M

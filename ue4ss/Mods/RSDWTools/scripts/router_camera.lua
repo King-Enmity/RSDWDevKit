@@ -6,9 +6,31 @@ local feature_grab = lazy_feature("feature_grab")
 local feature_oculus = lazy_feature("feature_oculus")
 local feature_oculus_config = lazy_feature("feature_oculus_config")
 local feature_oculus_clone = lazy_feature("feature_oculus_clone")
+local feature_oculus_duplicate = lazy_feature("feature_oculus_duplicate")
+local feature_oculus_rotation = lazy_feature("feature_oculus_rotation")
+local feature_oculus_scale = lazy_feature("feature_oculus_scale")
 local feature_oculus_transform = lazy_feature("feature_oculus_transform")
 
 local M = {}
+
+local function stop_oculus_transform_modes()
+    if feature_oculus_rotation.is_active and feature_oculus_rotation.is_active() then
+        feature_oculus_rotation.stop()
+    end
+    if feature_oculus_scale.is_active and feature_oculus_scale.is_active() then
+        feature_oculus_scale.stop()
+    end
+end
+
+local function safe_cancel_grab()
+    if feature_grab.safe_cancel then
+        return feature_grab.safe_cancel()
+    end
+    if feature_grab.is_active and feature_grab.is_active() then
+        return feature_grab.cancel()
+    end
+    return true, "not grabbing"
+end
 
 function M.try_handle(line, handle_line)
     local route_line = handle_line or function()
@@ -47,6 +69,9 @@ function M.try_handle(line, handle_line)
     --   camera.lookat               probe what the camera trace hits
     --   camera.lookat.item          inspect runtime world item nearest reticle
     --   camera.oculus.clone         spawn same class as look-at actor and grab it
+    --   camera.oculus.duplicate     smart copy: building piece preview, otherwise clone
+    --   camera.oculus.rotation.*    repair-mode in-place mouse rotation
+    --   camera.oculus.scale.*       repair-mode in-place mouse scaling
     --   camera.oculus.transform.inspect   inspect/capture actor under reticle
     --   camera.oculus.transform.reload ... re-read selected live actor transform
     --   camera.oculus.transform.apply ... apply edited transform to capture
@@ -322,6 +347,8 @@ function M.try_handle(line, handle_line)
         return true, false, "camera.oculus.init failed: " .. tostring(init_detail)
     end
     if line == "camera.oculus.stop" then
+        stop_oculus_transform_modes()
+        safe_cancel_grab()
         local ok, detail = feature_oculus.stop()
         if ok then
             local exit_ok, exit_detail = feature_oculus_config.run_exit(function(cmd)
@@ -334,6 +361,8 @@ function M.try_handle(line, handle_line)
         return true, false, "camera.oculus.stop failed: " .. tostring(detail)
     end
     if line == "camera.oculus.exit" then
+        stop_oculus_transform_modes()
+        safe_cancel_grab()
         local ok, detail = feature_oculus_config.run_exit(function(cmd)
             return route_line(cmd)
         end, true)
@@ -341,6 +370,11 @@ function M.try_handle(line, handle_line)
         return true, false, "camera.oculus.exit failed: " .. tostring(detail)
     end
     if line == "camera.oculus.toggle" then
+        local was_active = feature_oculus.require_state("active")
+        if was_active then
+            stop_oculus_transform_modes()
+            safe_cancel_grab()
+        end
         local ok, detail = feature_oculus.toggle()
         if ok then
             local active_ok = feature_oculus.require_state("active")
@@ -390,10 +424,121 @@ function M.try_handle(line, handle_line)
         if ok then return true, true, "ok camera.oculus.watermark " .. tostring(detail) end
         return true, false, "camera.oculus.watermark failed: " .. tostring(detail)
     end
+    if line == "camera.oculus.rotation.toggle" then
+        local ok, detail = feature_oculus_rotation.toggle()
+        if ok then return true, true, "ok camera.oculus.rotation.toggle " .. tostring(detail) end
+        return true, false, "camera.oculus.rotation.toggle failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.rotation.start" then
+        local ok, detail = feature_oculus_rotation.start()
+        if ok then return true, true, "ok camera.oculus.rotation.start " .. tostring(detail) end
+        return true, false, "camera.oculus.rotation.start failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.rotation.stop" then
+        local ok, detail = feature_oculus_rotation.stop()
+        if ok then return true, true, "ok camera.oculus.rotation.stop " .. tostring(detail) end
+        return true, false, "camera.oculus.rotation.stop failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.rotation.reset" then
+        local ok, detail = feature_oculus_rotation.reset()
+        if ok then return true, true, "ok camera.oculus.rotation.reset " .. tostring(detail) end
+        return true, false, "camera.oculus.rotation.reset failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.rotation.status" then
+        local ok, detail = feature_oculus_rotation.status()
+        if ok then return true, true, "ok camera.oculus.rotation.status " .. tostring(detail) end
+        return true, false, "camera.oculus.rotation.status failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.rotation.sensitivity" or line:sub(1, 35) == "camera.oculus.rotation.sensitivity " then
+        local arg = line:sub(36):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus_rotation.sensitivity(arg)
+        if ok then return true, true, "ok camera.oculus.rotation.sensitivity " .. tostring(detail) end
+        return true, false, "camera.oculus.rotation.sensitivity failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.rotation.freeze" or line:sub(1, 30) == "camera.oculus.rotation.freeze " then
+        local arg = line:sub(31):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus_rotation.freeze(arg)
+        if ok then return true, true, "ok camera.oculus.rotation.freeze " .. tostring(detail) end
+        return true, false, "camera.oculus.rotation.freeze failed: " .. tostring(detail)
+    end
+    local rotation_look_prefix = "camera.oculus.rotation.look"
+    if line == rotation_look_prefix or line:sub(1, #rotation_look_prefix + 1) == rotation_look_prefix .. " " then
+        local arg = line:sub(#rotation_look_prefix + 2):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus_rotation.look(arg)
+        if ok then return true, true, "ok camera.oculus.rotation.look " .. tostring(detail) end
+        return true, false, "camera.oculus.rotation.look failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.rotation.mode" or line:sub(1, 28) == "camera.oculus.rotation.mode " then
+        local arg = line:sub(29):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus_rotation.mode(arg)
+        if ok then return true, true, "ok camera.oculus.rotation.mode " .. tostring(detail) end
+        return true, false, "camera.oculus.rotation.mode failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.scale.toggle" then
+        local ok, detail = feature_oculus_scale.toggle()
+        if ok then return true, true, "ok camera.oculus.scale.toggle " .. tostring(detail) end
+        return true, false, "camera.oculus.scale.toggle failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.scale.start" then
+        local ok, detail = feature_oculus_scale.start()
+        if ok then return true, true, "ok camera.oculus.scale.start " .. tostring(detail) end
+        return true, false, "camera.oculus.scale.start failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.scale.stop" then
+        local ok, detail = feature_oculus_scale.stop()
+        if ok then return true, true, "ok camera.oculus.scale.stop " .. tostring(detail) end
+        return true, false, "camera.oculus.scale.stop failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.scale.reset" then
+        local ok, detail = feature_oculus_scale.reset()
+        if ok then return true, true, "ok camera.oculus.scale.reset " .. tostring(detail) end
+        return true, false, "camera.oculus.scale.reset failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.scale.status" then
+        local ok, detail = feature_oculus_scale.status()
+        if ok then return true, true, "ok camera.oculus.scale.status " .. tostring(detail) end
+        return true, false, "camera.oculus.scale.status failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.scale.sensitivity" or line:sub(1, 32) == "camera.oculus.scale.sensitivity " then
+        local arg = line:sub(33):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus_scale.sensitivity(arg)
+        if ok then return true, true, "ok camera.oculus.scale.sensitivity " .. tostring(detail) end
+        return true, false, "camera.oculus.scale.sensitivity failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.scale.bounds" or line:sub(1, 27) == "camera.oculus.scale.bounds " then
+        local arg = line:sub(28):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus_scale.bounds(arg)
+        if ok then return true, true, "ok camera.oculus.scale.bounds " .. tostring(detail) end
+        return true, false, "camera.oculus.scale.bounds failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.scale.freeze" or line:sub(1, 27) == "camera.oculus.scale.freeze " then
+        local arg = line:sub(28):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus_scale.freeze(arg)
+        if ok then return true, true, "ok camera.oculus.scale.freeze " .. tostring(detail) end
+        return true, false, "camera.oculus.scale.freeze failed: " .. tostring(detail)
+    end
+    local scale_look_prefix = "camera.oculus.scale.look"
+    if line == scale_look_prefix or line:sub(1, #scale_look_prefix + 1) == scale_look_prefix .. " " then
+        local arg = line:sub(#scale_look_prefix + 2):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus_scale.look(arg)
+        if ok then return true, true, "ok camera.oculus.scale.look " .. tostring(detail) end
+        return true, false, "camera.oculus.scale.look failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.scale.mode" or line:sub(1, 25) == "camera.oculus.scale.mode " then
+        local arg = line:sub(26):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus_scale.mode(arg)
+        if ok then return true, true, "ok camera.oculus.scale.mode " .. tostring(detail) end
+        return true, false, "camera.oculus.scale.mode failed: " .. tostring(detail)
+    end
     if line:sub(1, 19) == "camera.grab.release" then
         local ok, detail = feature_grab.release()
         if ok then return true, true, "ok camera.grab.release " .. tostring(detail) end
         return true, false, "camera.grab.release failed: " .. tostring(detail)
+    end
+    if line == "camera.grab.safe_cancel" then
+        local ok, detail = safe_cancel_grab()
+        if ok then return true, true, "ok camera.grab.safe_cancel " .. tostring(detail) end
+        return true, false, "camera.grab.safe_cancel failed: " .. tostring(detail)
     end
     if line:sub(1, 18) == "camera.grab.cancel" then
         local ok, detail = feature_grab.cancel()
@@ -404,6 +549,12 @@ function M.try_handle(line, handle_line)
         local ok, detail = feature_grab.status()
         if ok then return true, true, "ok camera.grab.status " .. tostring(detail) end
         return true, false, "camera.grab.status failed: " .. tostring(detail)
+    end
+    if line == "camera.grab.steps" or line:sub(1, 18) == "camera.grab.steps " then
+        local arg = line:sub(19):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_grab.steps(arg)
+        if ok then return true, true, "ok camera.grab.steps " .. tostring(detail) end
+        return true, false, "camera.grab.steps failed: " .. tostring(detail)
     end
     if line == "camera.grab.safety" or line:sub(1, 19) == "camera.grab.safety " then
         local arg = line:sub(20):match("^%s*(.-)%s*$") or ""
@@ -485,6 +636,11 @@ function M.try_handle(line, handle_line)
         local ok, detail = feature_oculus_clone.clone()
         if ok then return true, true, "ok camera.oculus.clone " .. tostring(detail) end
         return true, false, "camera.oculus.clone failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.duplicate" then
+        local ok, detail = feature_oculus_duplicate.duplicate()
+        if ok then return true, true, "ok camera.oculus.duplicate " .. tostring(detail) end
+        return true, false, "camera.oculus.duplicate failed: " .. tostring(detail)
     end
     if line == "camera.oculus.transform.reload" or line:sub(1, 31) == "camera.oculus.transform.reload " then
         local arg = line:sub(32):match("^%s*(.-)%s*$") or ""

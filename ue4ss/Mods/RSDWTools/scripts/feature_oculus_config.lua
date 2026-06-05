@@ -8,6 +8,8 @@ local mod_paths = require("mod_paths")
 local feature_umg = require("feature_umg")
 local feature_oculus = require("feature_oculus")
 local feature_grab = require("feature_grab")
+local feature_oculus_rotation = require("feature_oculus_rotation")
+local feature_oculus_scale = require("feature_oculus_scale")
 
 local M = {}
 
@@ -222,6 +224,14 @@ local function current_help_mode()
     local active_ok = feature_oculus.require_state("active")
     if not active_ok then last_help_mode = "inactive"; return last_help_mode end
     exit_armed = true
+    if feature_oculus_rotation.is_active and feature_oculus_rotation.is_active() then
+        last_help_mode = "rotation"
+        return last_help_mode
+    end
+    if feature_oculus_scale.is_active and feature_oculus_scale.is_active() then
+        last_help_mode = "scale"
+        return last_help_mode
+    end
     local repair_ok = feature_oculus.require_state("repair")
     if repair_ok then last_help_mode = "repair"; return last_help_mode end
     local preview_ok = feature_oculus.require_state("preview")
@@ -233,6 +243,8 @@ end
 local function section_help_bucket(section)
     local gate = lower(section.gate)
     local name = lower(section.name)
+    if gate == "rotation" or name == "rotation" or name == "rotation mode" then return "rotation" end
+    if gate == "scale" or name == "scale" or name == "scale mode" then return "scale" end
     if gate == "repair" or name == "repair" then return "repair" end
     if gate == "preview" or name == "build" or name == "build preview" or name == "preview" then return "preview" end
     if gate == "active" or name == "active" then return "active" end
@@ -241,7 +253,7 @@ end
 
 local function section_in_help(section, mode)
     local bucket = section_help_bucket(section)
-    if bucket == "active" then return mode == "active" or mode == "preview" or mode == "repair" end
+    if bucket == "active" then return mode == "active" or mode == "preview" or mode == "repair" or mode == "rotation" or mode == "scale" end
     return bucket ~= nil and bucket == mode
 end
 
@@ -305,6 +317,8 @@ local function pretty_key(raw)
 end
 
 local function mode_help_label(mode)
+    if mode == "rotation" then return "Rotation Mode" end
+    if mode == "scale" then return "Scale Mode" end
     if mode == "repair" then return "Actor Mode" end
     if mode == "preview" then return "Build Mode" end
     return "Oculus Mode"
@@ -377,6 +391,9 @@ end
 
 local function command_help_visible(command)
     local gate = lower(command.help_gate or command.umg_gate or command.display_gate)
+    if gate == "hidden" or gate == "hide" or gate == "off" or gate == "none" or gate == "no_help" then
+        return false
+    end
     if gate == "not_grab" or gate == "not_grabbed" or gate == "no_grab" then
         return feature_grab.is_active() ~= true
     end
@@ -490,6 +507,12 @@ function M.can_attempt_cached_gate(gate)
     local gate_name = lower(gate)
     if gate_name == "" or gate_name == "init" then gate_name = "active" end
     if gate_name == "inactive" then return true end
+    if gate_name == "rotation" then
+        return feature_oculus_rotation.is_active and feature_oculus_rotation.is_active() == true
+    end
+    if gate_name == "scale" then
+        return feature_oculus_scale.is_active and feature_oculus_scale.is_active() == true
+    end
     if last_help_mode == "inactive" then return false end
     if gate_name == "active" then return true end
     return last_help_mode == gate_name
@@ -626,10 +649,25 @@ function M.hotkey_help_text(mode)
     local primary = help_line(mode_help_label("active"), active_items)
     local secondary = ""
     local mode_items_count = 0
-    if mode == "preview" or mode == "repair" then
+    if mode == "preview" or mode == "repair" or mode == "rotation" or mode == "scale" then
         local mode_items = help_items_for_bucket(doc, mode)
         mode_items_count = #mode_items
-        secondary = help_block(mode_help_label(mode), mode_items)
+        local mode_label = mode_help_label(mode)
+        if mode == "rotation" and feature_oculus_rotation.help_details then
+            local lines = { feature_oculus_rotation.help_details() }
+            for _, item in ipairs(mode_items) do
+                lines[#lines + 1] = item
+            end
+            secondary = table.concat(lines, "\n")
+        elseif mode == "scale" and feature_oculus_scale.help_details then
+            local lines = { feature_oculus_scale.help_details() }
+            for _, item in ipairs(mode_items) do
+                lines[#lines + 1] = item
+            end
+            secondary = table.concat(lines, "\n")
+        else
+            secondary = help_block(mode_label, mode_items)
+        end
     end
 
     return primary,

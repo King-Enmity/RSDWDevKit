@@ -21,6 +21,11 @@ local oculus_help_border = nil
 local oculus_help_text = nil
 local oculus_help_mode_border = nil
 local oculus_help_mode_text = nil
+local oculus_rotation_canvas = nil
+local oculus_rotation_top_border = nil
+local oculus_rotation_top_text = nil
+local oculus_rotation_mode_border = nil
+local oculus_rotation_mode_text = nil
 local toast_generation = 0           -- bumped on every show ; auto-hide checks it
 local Visibility_HIDDEN = 2
 local Visibility_SELF_HIT_TEST_INVISIBLE = 4
@@ -56,6 +61,18 @@ local function set_oculus_help_visibility(show, show_mode_row)
     end
     if is_valid(oculus_help_mode_border) then
         oculus_help_mode_border:SetVisibility(show and show_mode_row and vis or Visibility_HIDDEN)
+    end
+end
+
+local function set_oculus_rotation_visibility(show, show_mode_row)
+    if not is_valid(oculus_rotation_canvas) then return end
+    local vis = show and Visibility_SELF_HIT_TEST_INVISIBLE or Visibility_HIDDEN
+    oculus_rotation_canvas:SetVisibility(vis)
+    if is_valid(oculus_rotation_top_border) then
+        oculus_rotation_top_border:SetVisibility(vis)
+    end
+    if is_valid(oculus_rotation_mode_border) then
+        oculus_rotation_mode_border:SetVisibility(show and show_mode_row and vis or Visibility_HIDDEN)
     end
 end
 
@@ -220,6 +237,94 @@ local function create_oculus_help_widget()
     return true
 end
 
+local function create_oculus_rotation_widget()
+    local UEHelpers
+    do
+        local ok, mod = pcall(require, "UEHelpers")
+        if ok and type(mod) == "table" then UEHelpers = mod end
+    end
+    if not UEHelpers or not UEHelpers.GetGameInstance then
+        print("[RSDWTools.umg] UEHelpers.GetGameInstance unavailable for Oculus rotation.")
+        return false
+    end
+
+    local game_instance
+    local ok_gi = pcall(function() game_instance = UEHelpers.GetGameInstance() end)
+    if not ok_gi or not game_instance then
+        print("[RSDWTools.umg] failed to resolve GameInstance for Oculus rotation.")
+        return false
+    end
+
+    local user_widget_cls = StaticFindObject and StaticFindObject("/Script/UMG.UserWidget") or nil
+    local widget_tree_cls = StaticFindObject and StaticFindObject("/Script/UMG.WidgetTree") or nil
+    local canvas_panel_cls = StaticFindObject and StaticFindObject("/Script/UMG.CanvasPanel") or nil
+    local border_cls = StaticFindObject and StaticFindObject("/Script/UMG.Border") or nil
+    local text_block_cls = StaticFindObject and StaticFindObject("/Script/UMG.TextBlock") or nil
+    if not (user_widget_cls and widget_tree_cls and canvas_panel_cls and border_cls and text_block_cls) then
+        print("[RSDWTools.umg] Oculus rotation UMG classes not found.")
+        return false
+    end
+
+    local hud = StaticConstructObject(user_widget_cls, game_instance, FName("RSDWToolsOculusRotationHUD"))
+    hud.WidgetTree = StaticConstructObject(widget_tree_cls, hud, FName("RSDWToolsOculusRotationTree"))
+
+    local canvas = StaticConstructObject(canvas_panel_cls, hud.WidgetTree, FName("RSDWToolsOculusRotationCanvas"))
+    hud.WidgetTree.RootWidget = canvas
+
+    local top_border = StaticConstructObject(border_cls, canvas, FName("RSDWToolsOculusRotationTopBorder"))
+    top_border:SetBrushColor(FLinearColor(0.04, 0.02, 0.0, 0.70))
+    top_border:SetPadding({ Left = 10, Top = 4, Right = 10, Bottom = 4 })
+
+    local top_t = StaticConstructObject(text_block_cls, top_border, FName("RSDWToolsOculusRotationTopText"))
+    top_t.Font.Size = 14
+    top_t:SetText(FText(""))
+    top_t:SetColorAndOpacity(FSlateColor(1.0, 0.88, 0.55, 1.0))
+    top_t:SetShadowOffset({ X = 1, Y = 1 })
+    top_t:SetShadowColorAndOpacity(FLinearColor(0.0, 0.0, 0.0, 0.80))
+    pcall(function() top_t:SetJustification(1) end)
+    top_border:SetContent(top_t)
+
+    local top_slot = canvas:AddChildToCanvas(top_border)
+    pcall(function() top_slot:SetAutoSize(false) end)
+    top_slot:SetAnchors({ Minimum = { X = 0.0, Y = 0.0 }, Maximum = { X = 1.0, Y = 0.0 } })
+    top_slot:SetAlignment({ X = 0.0, Y = 0.0 })
+    top_slot:SetPosition({ X = 0, Y = 30 })
+    pcall(function() top_slot:SetSize({ X = 0, Y = 72 }) end)
+    pcall(function() top_slot:SetOffsets({ Left = 0, Top = 30, Right = 0, Bottom = 72 }) end)
+
+    local mode_border = StaticConstructObject(border_cls, canvas, FName("RSDWToolsOculusRotationModeBorder"))
+    mode_border:SetBrushColor(FLinearColor(0.04, 0.02, 0.0, 0.66))
+    mode_border:SetPadding({ Left = 12, Top = 8, Right = 12, Bottom = 8 })
+
+    local mode_t = StaticConstructObject(text_block_cls, mode_border, FName("RSDWToolsOculusRotationModeText"))
+    mode_t.Font.Size = 15
+    mode_t:SetText(FText(""))
+    mode_t:SetColorAndOpacity(FSlateColor(1.0, 0.88, 0.55, 1.0))
+    mode_t:SetShadowOffset({ X = 1, Y = 1 })
+    mode_t:SetShadowColorAndOpacity(FLinearColor(0.0, 0.0, 0.0, 0.80))
+    pcall(function() mode_t:SetJustification(2) end)
+    mode_border:SetContent(mode_t)
+
+    local mode_slot = canvas:AddChildToCanvas(mode_border)
+    pcall(function() mode_slot:SetAutoSize(true) end)
+    mode_slot:SetAnchors({ Minimum = { X = 1.0, Y = 0.5 }, Maximum = { X = 1.0, Y = 0.5 } })
+    mode_slot:SetAlignment({ X = 1.0, Y = 0.0 })
+    mode_slot:SetPosition({ X = -18, Y = 44 })
+
+    canvas.Visibility = Visibility_HIDDEN
+    top_border.Visibility = Visibility_HIDDEN
+    mode_border.Visibility = Visibility_HIDDEN
+    hud:AddToViewport(97)
+
+    oculus_rotation_canvas = canvas
+    oculus_rotation_top_border = top_border
+    oculus_rotation_top_text = top_t
+    oculus_rotation_mode_border = mode_border
+    oculus_rotation_mode_text = mode_t
+    print("[RSDWTools.umg] Oculus rotation widget created.")
+    return true
+end
+
 -- Fire a toast on screen.
 --   message  : string text to show
 --   duration : seconds before auto-hide ; defaults to 3 if nil/<=0
@@ -290,6 +395,29 @@ end
 
 function M.oculus_help_hide()
     M.oculus_help("")
+end
+
+function M.oculus_rotation_overlay(show, top_message, mode_message)
+    if not ExecuteInGameThread then
+        print("[RSDWTools.umg] ExecuteInGameThread unavailable.")
+        return
+    end
+    ExecuteInGameThread(function()
+        if show ~= true then
+            set_oculus_rotation_visibility(false, false)
+            return
+        end
+        if not is_valid(oculus_rotation_top_text) then
+            if not create_oculus_rotation_widget() then return end
+        end
+        if is_valid(oculus_rotation_top_text) then
+            oculus_rotation_top_text:SetText(FText(tostring(top_message or "")))
+        end
+        if is_valid(oculus_rotation_mode_text) then
+            oculus_rotation_mode_text:SetText(FText(tostring(mode_message or "")))
+        end
+        set_oculus_rotation_visibility(true, tostring(mode_message or "") ~= "")
+    end)
 end
 
 -- Backwards-compat shim used by older console handlers ; routes through

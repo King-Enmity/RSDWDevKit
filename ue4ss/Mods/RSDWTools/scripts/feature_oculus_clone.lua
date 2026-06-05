@@ -144,6 +144,38 @@ local function spawn_transform_args(class_path, xform)
         json_num(scale.Z or scale.z, 1))
 end
 
+local function apply_actor_transform(actor, xform)
+    if not is_valid(actor) then return false, "spawned actor unavailable" end
+    xform = xform or {}
+    local loc = xform.loc or {}
+    local rot = xform.rot or {}
+    local scale = xform.scale or {}
+
+    feature_actor.force_actor_movable(actor)
+    local ok_loc, loc_detail = feature_actor.move_actor(actor, {
+        X = loc.X or loc.x or 0,
+        Y = loc.Y or loc.y or 0,
+        Z = loc.Z or loc.z or 0,
+    })
+    if not ok_loc then return false, "move failed: " .. tostring(loc_detail) end
+
+    local ok_rot = feature_actor.set_actor_rotation(actor, {
+        Pitch = rot.Pitch or rot.pitch or 0,
+        Yaw = rot.Yaw or rot.yaw or 0,
+        Roll = rot.Roll or rot.roll or 0,
+    })
+    if not ok_rot then return false, "rotation copy failed" end
+
+    local ok_scale = feature_actor.set_actor_scale3d(actor, {
+        X = scale.X or scale.x or 1,
+        Y = scale.Y or scale.y or 1,
+        Z = scale.Z or scale.z or 1,
+    })
+    if not ok_scale then return false, "scale copy failed" end
+
+    return true
+end
+
 local function oculus_pawn()
     local ok, obj = pcall(function()
         return feature_field.resolve_root("pawn.OculusComponent.OculusPawn")
@@ -176,6 +208,7 @@ local function clone_runtime_world_item(actor, source)
         return false, "runtime world item ItemData has no readable asset name"
     end
 
+    local source_transform = actor_transform(actor)
     local ok_give, give_detail = feature_inventory.give(item_name .. " 1")
     if not ok_give and item_path and item_path ~= "" then
         ok_give, give_detail = feature_player_spawn.spawn_item(item_path .. " 1")
@@ -184,18 +217,41 @@ local function clone_runtime_world_item(actor, source)
         return false, string.format("item duplicate failed for %s: %s", tostring(item_name), tostring(give_detail))
     end
 
-    local ok_grab, grab_detail = feature_grab.start_lastspawned()
+    local spawned_actor
+    pcall(function() spawned_actor = feature_field.resolve_root("lastspawned") end)
+    if not is_valid(spawned_actor) then
+        return false, string.format("duplicated item %s, but lastspawned was not resolvable", tostring(item_name))
+    end
+
+    local ok_xform, xform_detail = apply_actor_transform(spawned_actor, source_transform)
+    if not ok_xform then
+        return false, string.format("duplicated item %s, but transform copy failed: %s",
+            tostring(item_name), tostring(xform_detail))
+    end
+
+    local ok_grab, grab_detail = feature_grab.start_lastspawned_preserving_transform(
+        source_transform.rot,
+        source_transform.scale)
     if not ok_grab then
         return false, string.format("duplicated item %s, but grab failed: %s", tostring(item_name), tostring(grab_detail))
     end
 
     local short = feature_actor.short_name_of(actor) or "<unnamed item>"
     return true, string.format(
-        "duplicated item %s from %s [%s via %s]; %s; %s",
+        "duplicated item %s from %s [%s via %s]; copied loc=(%.1f,%.1f,%.1f) rot=(%.1f,%.1f,%.1f) scale=(%.3f,%.3f,%.3f); %s; %s",
         tostring(item_name),
         tostring(short),
         tostring(source or "trace"),
         tostring(item_source or "ItemData"),
+        source_transform.loc.X or 0,
+        source_transform.loc.Y or 0,
+        source_transform.loc.Z or 0,
+        source_transform.rot.Pitch or 0,
+        source_transform.rot.Yaw or 0,
+        source_transform.rot.Roll or 0,
+        source_transform.scale.X or 1,
+        source_transform.scale.Y or 1,
+        source_transform.scale.Z or 1,
         tostring(give_detail),
         tostring(grab_detail))
 end

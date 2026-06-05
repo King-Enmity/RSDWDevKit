@@ -26,6 +26,8 @@
 local mod_paths = require("mod_paths")
 local command_line_router = require("command_line_router")
 local feature_oculus_config = require("feature_oculus_config")
+local feature_oculus_rotation = require("feature_oculus_rotation")
+local feature_oculus_scale = require("feature_oculus_scale")
 
 local M = {}
 
@@ -594,11 +596,33 @@ local function safe_dispatch_oculus_gate(gate, lines, label)
     if type(lines) ~= "table" or #lines == 0 then return false end
     local gate_name = gate or "active"
     if gate_name == "init" then gate_name = "active" end
-    local ok, msg = dispatch_result("camera.oculus.require " .. gate_name)
-    if not ok then
-        print(string.format("[RSDWTools.hotkeys] oculus '%s' blocked by gate '%s': %s",
-            label or lines[1] or "?", gate_name, tostring(msg)))
-        return false
+    local first_line = tostring(lines[1] or ""):lower()
+    local active_rotation_command = feature_oculus_rotation.is_active()
+        and first_line:find("^camera%.oculus%.rotation") == 1
+    local active_scale_command = feature_oculus_scale.is_active()
+        and first_line:find("^camera%.oculus%.scale") == 1
+    if active_rotation_command or active_scale_command then
+        -- Transform modes temporarily own their own controls, even when the
+        -- triggering hotkey lives in another Oculus config section.
+    elseif gate_name == "rotation" then
+        if not feature_oculus_rotation.is_active() then
+            print(string.format("[RSDWTools.hotkeys] oculus '%s' blocked by gate 'rotation': rotation mode inactive",
+                label or lines[1] or "?"))
+            return false
+        end
+    elseif gate_name == "scale" then
+        if not feature_oculus_scale.is_active() then
+            print(string.format("[RSDWTools.hotkeys] oculus '%s' blocked by gate 'scale': scale mode inactive",
+                label or lines[1] or "?"))
+            return false
+        end
+    else
+        local ok, msg = dispatch_result("camera.oculus.require " .. gate_name)
+        if not ok then
+            print(string.format("[RSDWTools.hotkeys] oculus '%s' blocked by gate '%s': %s",
+                label or lines[1] or "?", gate_name, tostring(msg)))
+            return false
+        end
     end
     for _, line in ipairs(lines) do
         if not safe_dispatch(line) then return false end
@@ -933,6 +957,51 @@ local function skip_if_oculus_reserved(scope_label, label, trigger_name, modifie
     return true
 end
 
+local function oculus_command_verb(command)
+    if not command then return "" end
+    local verb = command.verb
+    if (not verb or verb == "") and type(command.verbs) == "table" then verb = command.verbs[1] end
+    return tostring(verb or "")
+end
+
+local function is_oculus_rotation_command(command)
+    return oculus_command_verb(command):lower():find("^camera%.oculus%.rotation") == 1
+end
+
+local function is_oculus_scale_command(command)
+    return oculus_command_verb(command):lower():find("^camera%.oculus%.scale") == 1
+end
+
+local function is_active_transform_mode_command(command)
+    if feature_oculus_rotation.is_active() and is_oculus_rotation_command(command) then
+        return true
+    end
+    if feature_oculus_scale.is_active() and is_oculus_scale_command(command) then
+        return true
+    end
+    return false
+end
+
+local function transform_mode_blocks_oculus_command(command)
+    if feature_oculus_rotation.is_active() then
+        return not is_oculus_rotation_command(command)
+    end
+    if feature_oculus_scale.is_active() then
+        return not is_oculus_scale_command(command)
+    end
+    return false
+end
+
+local function oculus_command_gate_allowed(gate, command)
+    if feature_oculus_rotation.is_active() and is_oculus_rotation_command(command) then
+        return true
+    end
+    if feature_oculus_scale.is_active() and is_oculus_scale_command(command) then
+        return true
+    end
+    return feature_oculus_config.can_attempt_cached_gate(gate)
+end
+
 local function register_kit_gamepad_hotkey(kit_name, trigger_name, modifier_names, my_gen, kit)
     local key = gamepad_chord_key(trigger_name, modifier_names)
     _gamepad_dispatch[key] = function()
@@ -995,11 +1064,15 @@ local function register_oculus_doc(doc, my_gen)
                 local cb = function()
                     if _generation ~= my_gen then return end
                     if not oculus_hotkeys_world_ready() then return end
-                    if not feature_oculus_config.can_attempt_cached_gate(gate) then return end
+                    if transform_mode_blocks_oculus_command(command) then return end
+                    if not oculus_command_gate_allowed(gate, command) then return end
                     local lines, next_state = feature_oculus_config.next_command_lines(state_key, command)
+                    local was_transform_mode_command = is_active_transform_mode_command(command)
                     if safe_dispatch_oculus_gate(gate, lines, label) then
                         feature_oculus_config.commit_command_state(state_key, next_state)
-                        feature_oculus_config.refresh_hotkey_help()
+                        if not was_transform_mode_command then
+                            feature_oculus_config.refresh_hotkey_help()
+                        end
                     end
                 end
                 local hk = command.hotkey
@@ -1007,11 +1080,13 @@ local function register_oculus_doc(doc, my_gen)
                     if is_polled_input_token(hk) then
                         require("feature_wheel_hook").register(polled_input_token(hk), command.modifiers, function()
                             if not oculus_hotkeys_world_ready() then return end
-                            if not feature_oculus_config.can_attempt_cached_gate(gate) then return end
+                            if transform_mode_blocks_oculus_command(command) then return end
+                            if not oculus_command_gate_allowed(gate, command) then return end
                             cb()
                         end, function()
                             return oculus_hotkeys_world_ready()
-                                and feature_oculus_config.can_attempt_cached_gate(gate)
+                                and not transform_mode_blocks_oculus_command(command)
+                                and oculus_command_gate_allowed(gate, command)
                         end)
                         count = count + 1
                         print(string.format("[RSDWTools.hotkeys] oculus '%s' bound to %s", label, hk))
@@ -1021,7 +1096,8 @@ local function register_oculus_doc(doc, my_gen)
                             local keyboard_cb = function()
                                 if _generation ~= my_gen then return end
                                 if not oculus_hotkeys_world_ready() then return end
-                                if not feature_oculus_config.can_attempt_cached_gate(gate) then return end
+                                if transform_mode_blocks_oculus_command(command) then return end
+                                if not oculus_command_gate_allowed(gate, command) then return end
                                 if not keyboard_modifiers_exact(command.modifiers) then return end
                                 cb()
                             end

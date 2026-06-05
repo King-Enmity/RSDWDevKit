@@ -148,7 +148,7 @@
 --   camera.oculus.init
 --   camera.oculus.help [on|off|toggle]
 --   camera.oculus.umg <on|off|toggle>
---   camera.oculus.require <active|inactive|preview|repair>
+--   camera.oculus.require <active|inactive|preview|repair|rotation|scale>
 --   camera.oculus.speed [<maxSpeed> [acceleration] [deceleration]]
 --   camera.oculus.distance [<maxDistance> [falloffThreshold]]
 --   camera.oculus.vignette <off|on> [duration] [r,g,b,a]
