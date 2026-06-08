@@ -17,7 +17,7 @@ local feature_umg = require("feature_umg")
 local mod_paths = require("mod_paths")
 
 local DATA_REFRESH_SECONDS = 0.25
-local UMG_REFRESH_MS = 250
+local PANEL_EXPIRY_GRACE_MS = 100
 local HUD_TOGGLE_DEFER_MS = 16
 local INPUT_REPAIR_DEFER_MS = 100
 local TEARDOWN_SETTLE_MS = 400
@@ -54,6 +54,7 @@ local state = {
     umg_ok = false,
     umg_err = nil,
     umg_loop = false,
+    umg_expiry_generation = 0,
     umg_updates = 0,
     umg_visible = false,
     umg_hidden = false,
@@ -950,6 +951,7 @@ end
 
 local function clear_inactive_panel_state()
     hide_inspect_help()
+    state.umg_expiry_generation = (state.umg_expiry_generation or 0) + 1
     state.umg_hidden = false
     state.overlay = false
     state.snap_until = nil
@@ -961,27 +963,21 @@ local function clear_inactive_panel_state()
 end
 
 start_umg_loop = function()
-    if state.umg_loop then return end
-    if not LoopAsync then return end
-    state.umg_loop = true
-    LoopAsync(UMG_REFRESH_MS, function()
-        if RSDWTOOLS_NPC_INSPECT_TOKEN ~= module_token then
-            state.umg_loop = false
-            return true
-        end
+    state.umg_loop = false
+    if not LoopAsync or not state.snap_until then return end
+
+    state.umg_expiry_generation = (state.umg_expiry_generation or 0) + 1
+    local generation = state.umg_expiry_generation
+    local delay_ms = math.floor(((state.snap_until - os.clock()) * 1000.0) + PANEL_EXPIRY_GRACE_MS)
+    if delay_ms < 1 then delay_ms = 1 end
+    LoopAsync(delay_ms, function()
+        if generation ~= state.umg_expiry_generation then return true end
+        if RSDWTOOLS_NPC_INSPECT_TOKEN ~= module_token then return true end
         if not panel_active() then
             destroy_umg_panel()
             clear_inactive_panel_state()
-            state.umg_loop = false
-            return true
         end
-        if state.umg_hidden then
-            destroy_umg_panel()
-            return false
-        end
-        ensure_umg_panel()
-        schedule_umg_update()
-        return false
+        return true
     end)
 end
 
@@ -1108,6 +1104,7 @@ local function set_overlay(enabled)
     if not enabled then
         state.overlay = false
         state.snap_until = nil
+        state.umg_expiry_generation = (state.umg_expiry_generation or 0) + 1
         state.overlay_settle_until = nil
         hide_inspect_help()
         destroy_umg_panel()
@@ -1162,6 +1159,7 @@ function M.on(value_str)
         local ok_overlay, overlay_detail = set_overlay(true)
         if not ok_overlay then return false, "overlay failed: " .. tostring(overlay_detail) end
         state.snap_until = os.clock() + PANEL_ONLY_DUR
+        start_umg_loop()
         return true, "inspecting " .. object_label(state.actor) .. " camera_view=off panel_timeout=" .. tostring(PANEL_ONLY_DUR) .. "s " .. tostring(overlay_detail)
     end
 

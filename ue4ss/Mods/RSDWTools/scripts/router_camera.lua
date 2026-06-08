@@ -7,18 +7,29 @@ local feature_oculus = lazy_feature("feature_oculus")
 local feature_oculus_config = lazy_feature("feature_oculus_config")
 local feature_oculus_clone = lazy_feature("feature_oculus_clone")
 local feature_oculus_duplicate = lazy_feature("feature_oculus_duplicate")
+local feature_oculus_input_guard = lazy_feature("feature_oculus_input_guard")
+local feature_oculus_mode = lazy_feature("feature_oculus_mode")
 local feature_oculus_rotation = lazy_feature("feature_oculus_rotation")
 local feature_oculus_scale = lazy_feature("feature_oculus_scale")
 local feature_oculus_transform = lazy_feature("feature_oculus_transform")
+local feature_wheel_hook = lazy_feature("feature_wheel_hook")
 
 local M = {}
 
 local function stop_oculus_transform_modes()
     if feature_oculus_rotation.is_active and feature_oculus_rotation.is_active() then
-        feature_oculus_rotation.stop()
+        if feature_oculus_rotation.stop_now then
+            feature_oculus_rotation.stop_now("oculus.exit")
+        else
+            feature_oculus_rotation.stop()
+        end
     end
     if feature_oculus_scale.is_active and feature_oculus_scale.is_active() then
-        feature_oculus_scale.stop()
+        if feature_oculus_scale.stop_now then
+            feature_oculus_scale.stop_now("oculus.exit")
+        else
+            feature_oculus_scale.stop()
+        end
     end
 end
 
@@ -30,6 +41,26 @@ local function safe_cancel_grab()
         return feature_grab.cancel()
     end
     return true, "not grabbing"
+end
+
+local function set_oculus_input_poll(active)
+    local ok, detail = pcall(function()
+        if feature_wheel_hook.set_oculus_active then
+            return feature_wheel_hook.set_oculus_active(active == true)
+        end
+        return true, "wheel hook has no deferred Oculus gate"
+    end)
+    if not ok then
+        print("[RSDWTools] Oculus input poll gate failed: " .. tostring(detail))
+    end
+end
+
+local function release_oculus_input_guard(reason)
+    pcall(function()
+        if feature_oculus_input_guard.release_all then
+            feature_oculus_input_guard.release_all(reason or "oculus.exit")
+        end
+    end)
 end
 
 function M.try_handle(line, handle_line)
@@ -68,11 +99,13 @@ function M.try_handle(line, handle_line)
     --   camera.grab.item            latch/release runtime world item nearest reticle
     --   camera.lookat               probe what the camera trace hits
     --   camera.lookat.item          inspect runtime world item nearest reticle
-    --   camera.oculus.clone         spawn same class as look-at actor and grab it
+    --   camera.oculus.clone         spawn same class as look-at actor and copy transform
     --   camera.oculus.duplicate     smart copy: building piece preview, otherwise clone
+    --   camera.oculus.mode.*        modal grab/rotation/scale switch coordinator
     --   camera.oculus.rotation.*    repair-mode in-place mouse rotation
     --   camera.oculus.scale.*       repair-mode in-place mouse scaling
     --   camera.oculus.transform.inspect   inspect/capture actor under reticle
+    --   camera.oculus.transform.capture   enable/disable passive transform capture
     --   camera.oculus.transform.reload ... re-read selected live actor transform
     --   camera.oculus.transform.apply ... apply edited transform to capture
     --   camera.destroy.lookat       destroy actor under the active camera reticle
@@ -300,6 +333,7 @@ function M.try_handle(line, handle_line)
             if not active_ok then
                 return true, false, "camera.oculus.start init blocked: " .. tostring(active_detail)
             end
+            set_oculus_input_poll(true)
             local init_ok, init_detail = feature_oculus_config.run_init(function(cmd)
                 return route_line(cmd)
             end)
@@ -334,6 +368,7 @@ function M.try_handle(line, handle_line)
     if line == "camera.oculus.init" then
         local active_ok, active_detail = feature_oculus.require_state("active")
         if not active_ok then return true, false, "camera.oculus.init failed: " .. tostring(active_detail) end
+        set_oculus_input_poll(true)
         local init_ok, init_detail = feature_oculus_config.run_init(function(cmd)
             return route_line(cmd)
         end)
@@ -347,6 +382,8 @@ function M.try_handle(line, handle_line)
         return true, false, "camera.oculus.init failed: " .. tostring(init_detail)
     end
     if line == "camera.oculus.stop" then
+        set_oculus_input_poll(false)
+        release_oculus_input_guard("oculus.stop")
         stop_oculus_transform_modes()
         safe_cancel_grab()
         local ok, detail = feature_oculus.stop()
@@ -361,17 +398,22 @@ function M.try_handle(line, handle_line)
         return true, false, "camera.oculus.stop failed: " .. tostring(detail)
     end
     if line == "camera.oculus.exit" then
+        set_oculus_input_poll(false)
+        release_oculus_input_guard("oculus.exit")
         stop_oculus_transform_modes()
         safe_cancel_grab()
         local ok, detail = feature_oculus_config.run_exit(function(cmd)
             return route_line(cmd)
         end, true)
+        feature_oculus_config.hide_hotkey_help()
         if ok then return true, true, "ok camera.oculus.exit " .. tostring(detail) end
         return true, false, "camera.oculus.exit failed: " .. tostring(detail)
     end
     if line == "camera.oculus.toggle" then
         local was_active = feature_oculus.require_state("active")
         if was_active then
+            set_oculus_input_poll(false)
+            release_oculus_input_guard("oculus.toggle.off")
             stop_oculus_transform_modes()
             safe_cancel_grab()
         end
@@ -379,10 +421,12 @@ function M.try_handle(line, handle_line)
         if ok then
             local active_ok = feature_oculus.require_state("active")
             if active_ok then
+                set_oculus_input_poll(true)
                 feature_oculus_config.show_hotkey_help(function(cmd)
                     return route_line(cmd)
                 end)
             else
+                set_oculus_input_poll(false)
                 local exit_ok, exit_detail = feature_oculus_config.run_exit(function(cmd)
                     return route_line(cmd)
                 end)
@@ -423,6 +467,26 @@ function M.try_handle(line, handle_line)
         local ok, detail = feature_oculus.watermark(arg)
         if ok then return true, true, "ok camera.oculus.watermark " .. tostring(detail) end
         return true, false, "camera.oculus.watermark failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.mode.status" then
+        local ok, detail = feature_oculus_mode.status()
+        if ok then return true, true, "ok camera.oculus.mode.status " .. tostring(detail) end
+        return true, false, "camera.oculus.mode.status failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.mode.grab" then
+        local ok, detail = feature_oculus_mode.activate("grab")
+        if ok then return true, true, "ok camera.oculus.mode.grab " .. tostring(detail) end
+        return true, false, "camera.oculus.mode.grab failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.mode.rotation" or line == "camera.oculus.mode.rotate" then
+        local ok, detail = feature_oculus_mode.activate("rotation")
+        if ok then return true, true, "ok camera.oculus.mode.rotation " .. tostring(detail) end
+        return true, false, "camera.oculus.mode.rotation failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.mode.scale" then
+        local ok, detail = feature_oculus_mode.activate("scale")
+        if ok then return true, true, "ok camera.oculus.mode.scale " .. tostring(detail) end
+        return true, false, "camera.oculus.mode.scale failed: " .. tostring(detail)
     end
     if line == "camera.oculus.rotation.toggle" then
         local ok, detail = feature_oculus_rotation.toggle()
@@ -550,6 +614,13 @@ function M.try_handle(line, handle_line)
         if ok then return true, true, "ok camera.grab.status " .. tostring(detail) end
         return true, false, "camera.grab.status failed: " .. tostring(detail)
     end
+    local grab_probe_prefix = "camera.grab.probe"
+    if line == grab_probe_prefix or line:sub(1, #grab_probe_prefix + 1) == grab_probe_prefix .. " " then
+        local arg = line:sub(#grab_probe_prefix + 2):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_grab.probe(arg ~= "" and arg or nil)
+        if ok then return true, true, "ok camera.grab.probe " .. tostring(detail) end
+        return true, false, "camera.grab.probe failed: " .. tostring(detail)
+    end
     if line == "camera.grab.steps" or line:sub(1, 18) == "camera.grab.steps " then
         local arg = line:sub(19):match("^%s*(.-)%s*$") or ""
         local ok, detail = feature_grab.steps(arg)
@@ -588,6 +659,13 @@ function M.try_handle(line, handle_line)
         if ok then return true, true, "ok camera.grab.lift " .. tostring(detail) end
         return true, false, "camera.grab.lift failed: " .. tostring(detail)
     end
+    local grab_toggle_safe_prefix = "camera.grab.toggle_safe"
+    if line == grab_toggle_safe_prefix or line:sub(1, #grab_toggle_safe_prefix + 1) == grab_toggle_safe_prefix .. " " then
+        local arg = line:sub(#grab_toggle_safe_prefix + 2):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_grab.toggle_safe(arg ~= "" and arg or nil)
+        if ok then return true, true, "ok camera.grab.toggle_safe " .. tostring(detail) end
+        return true, false, "camera.grab.toggle_safe failed: " .. tostring(detail)
+    end
     if line:sub(1, 18) == "camera.grab.toggle" then
         local arg = line:sub(19):match("^%s*(.-)%s*$") or ""
         local ok, detail = feature_grab.toggle(arg ~= "" and arg or nil)
@@ -603,6 +681,13 @@ function M.try_handle(line, handle_line)
         local ok, detail = feature_grab.toggle_item()
         if ok then return true, true, "ok camera.grab.item " .. tostring(detail) end
         return true, false, "camera.grab.item failed: " .. tostring(detail)
+    end
+    local grab_start_safe_prefix = "camera.grab.start_safe"
+    if line == grab_start_safe_prefix or line:sub(1, #grab_start_safe_prefix + 1) == grab_start_safe_prefix .. " " then
+        local arg = line:sub(#grab_start_safe_prefix + 2):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_grab.start_safe(arg ~= "" and arg or nil)
+        if ok then return true, true, "ok camera.grab.start_safe " .. tostring(detail) end
+        return true, false, "camera.grab.start_safe failed: " .. tostring(detail)
     end
     if line:sub(1, 17) == "camera.grab.start" then
         local arg = line:sub(18):match("^%s*(.-)%s*$") or ""
@@ -631,6 +716,12 @@ function M.try_handle(line, handle_line)
         local ok, detail = feature_grab.lookat()
         if ok then return true, true, "ok camera.oculus.transform.inspect " .. tostring(detail) end
         return true, false, "camera.oculus.transform.inspect failed: " .. tostring(detail)
+    end
+    if line == "camera.oculus.transform.capture" or line:sub(1, 32) == "camera.oculus.transform.capture " then
+        local arg = line:sub(33):match("^%s*(.-)%s*$") or ""
+        local ok, detail = feature_oculus_transform.capture(arg)
+        if ok then return true, true, "ok camera.oculus.transform.capture " .. tostring(detail) end
+        return true, false, "camera.oculus.transform.capture failed: " .. tostring(detail)
     end
     if line == "camera.oculus.clone" then
         local ok, detail = feature_oculus_clone.clone()

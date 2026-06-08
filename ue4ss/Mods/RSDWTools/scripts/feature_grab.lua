@@ -42,6 +42,7 @@ local feature_field = require("feature_field")
 local feature_inventory = require("feature_inventory")
 local feature_umg   = require("feature_umg")
 local feature_oculus_transform = require("feature_oculus_transform")
+local feature_oculus_async = require("feature_oculus_async")
 
 local grab_safety_enabled = true
 
@@ -77,6 +78,10 @@ local function _toast(msg, secs)
     pcall(function() feature_umg.toast(msg, secs or 1.5) end)
 end
 
+local function schedule_game_thread(delay_ms, fn)
+    return feature_oculus_async.schedule_game_thread(delay_ms, fn)
+end
+
 local function _destroy_actor(actor)
     if not feature_actor.is_valid_object(actor) then return false end
     if actor.K2_DestroyActor then
@@ -100,6 +105,129 @@ local function actor_identity_text(actor)
     local ok_full, full = pcall(function() return actor:GetFullName() end)
     if ok_full and full then parts[#parts + 1] = tostring(full) end
     return table.concat(parts, " "):lower()
+end
+
+local function actor_class_name(actor)
+    return feature_field.class_name_of(actor) or "<unknown>"
+end
+
+local function actor_full_name(actor)
+    if not feature_actor.is_valid_object(actor) then return "<invalid>" end
+    local ok, full = pcall(function() return actor:GetFullName() end)
+    if ok and full then return tostring(full) end
+    return "<full unavailable>"
+end
+
+local function object_name_safe(obj)
+    if not feature_actor.is_valid_object(obj) then return "<invalid>" end
+    local ok, name = pcall(function()
+        if obj.GetName then return obj:GetName() end
+        if obj.GetFName then
+            local fname = obj:GetFName()
+            if fname and fname.ToString then return fname:ToString() end
+        end
+        return nil
+    end)
+    if ok and name then return tostring(name) end
+    return "<unnamed>"
+end
+
+local function root_component(actor)
+    if not feature_actor.is_valid_object(actor) then return nil end
+    local ok, root = pcall(function() return actor.RootComponent end)
+    if ok and feature_actor.is_valid_object(root) then return root end
+    if actor.GetRootComponent then
+        local ok_get, got = pcall(function() return actor:GetRootComponent() end)
+        if ok_get and feature_actor.is_valid_object(got) then return got end
+    end
+    return nil
+end
+
+local function component_detail(component)
+    if not feature_actor.is_valid_object(component) then return "root=<none>" end
+    local cls = feature_field.class_name_of(component) or "<unknown>"
+    local mobility = "?"
+    local sim = "?"
+    local collision = "?"
+    pcall(function()
+        if component.Mobility ~= nil then mobility = tostring(component.Mobility) end
+    end)
+    pcall(function()
+        if component.IsSimulatingPhysics then sim = tostring(component:IsSimulatingPhysics()) end
+    end)
+    pcall(function()
+        if component.GetCollisionEnabled then collision = tostring(component:GetCollisionEnabled()) end
+    end)
+    return string.format("root=%s root_class=%s mobility=%s sim=%s collision=%s",
+        object_name_safe(component), tostring(cls), tostring(mobility), tostring(sim), tostring(collision))
+end
+
+local function vec_line(vec)
+    if not vec then return "(?,?,?)" end
+    return string.format("(%.0f,%.0f,%.0f)", vec.X or 0, vec.Y or 0, vec.Z or 0)
+end
+
+local function rot_line(rot)
+    if not rot then return "(?,?,?)" end
+    return string.format("(p=%.1f,y=%.1f,r=%.1f)", rot.Pitch or 0, rot.Yaw or 0, rot.Roll or 0)
+end
+
+local function scale_line(scale)
+    if not scale then return "(?,?,?)" end
+    return string.format("(%.3f,%.3f,%.3f)", scale.X or 0, scale.Y or 0, scale.Z or 0)
+end
+
+local function grab_block_reason(a)
+    local cls_name, full_name
+    pcall(function()
+        local c = a:GetClass()
+        if c then cls_name = c:GetName() end
+    end)
+    pcall(function() full_name = a:GetFullName() end)
+    local hay = ((cls_name or "") .. " " .. (full_name or "")):lower()
+
+    local building_piece_data_index
+    pcall(function() building_piece_data_index = a.BuildingPieceDataIndex end)
+    if type(building_piece_data_index) == "number" then
+        return "building piece", "BuildingPieceDataIndex=" .. tostring(building_piece_data_index)
+    end
+
+    if hay:find("staticmeshactor", 1, true)
+        or hay:find("instancedfoliageactor", 1, true)
+        or hay:find("landscapestreamingproxy", 1, true)
+        or hay:find("landscapeproxy", 1, true)
+        or hay:find("bpp_", 1, true) then
+        return "world-static/environment", cls_name or full_name or "<unknown>"
+    end
+    return nil
+end
+
+local function target_diagnostic_line(actor, source, loc)
+    if not feature_actor.is_valid_object(actor) then return "target=<invalid>" end
+    local short = feature_actor.short_name_of(actor) or "<unnamed>"
+    local root = root_component(actor)
+    local actor_loc = loc or feature_actor.actor_location(actor)
+    local actor_rot = feature_actor.actor_rotation(actor)
+    local actor_scale = feature_actor.get_actor_scale3d(actor)
+    local blocked_kind, blocked_detail = grab_block_reason(actor)
+    local blocked = blocked_kind and (blocked_kind .. ":" .. tostring(blocked_detail)) or "no"
+    return string.format(
+        "target=%s class=%s source=%s loc=%s rot=%s scale=%s blocked=%s %s full=%s",
+        tostring(short), tostring(actor_class_name(actor)), tostring(source or "?"), vec_line(actor_loc),
+        rot_line(actor_rot), scale_line(actor_scale), tostring(blocked),
+        component_detail(root), actor_full_name(actor))
+end
+
+local function is_runtime_world_item_actor(actor)
+    if not feature_actor.is_valid_object(actor) then return false end
+    if feature_inventory._is_runtime_world_item then
+        local ok, is_item = pcall(function()
+            return feature_inventory._is_runtime_world_item(actor)
+        end)
+        if ok and is_item == true then return true end
+    end
+    local text = actor_identity_text(actor)
+    return text:find("runtimespawnedworlditem", 1, true) ~= nil
 end
 
 local function looks_like_tree_destroy_target(actor)
@@ -168,6 +296,23 @@ local WORLD_ITEM_FIND_CLASSES = {
     "RuntimeSpawnedWorldItem",
     "WorldItem",
 }
+local SAFE_GRAB_DELAY_MS = 80
+local FINISH_SETTLE_SECONDS = 0.0
+local FINISH_HOTKEY_DEBOUNCE_SECONDS = 0.18
+local GRAB_RESTART_COOLDOWN_SECONDS = 0.75
+local POST_FINISH_STABILIZE_MS = 90
+local POST_FINISH_CAPTURE_MS = 150
+local POST_FINISH_HELP_MS = 180
+local GRAB_MAX_FOLLOW_STEP_CM = 2500.0
+
+local function schedule_help_refresh(delay_ms)
+    schedule_game_thread(delay_ms or POST_FINISH_HELP_MS, function()
+        local ok_cfg, cfg = pcall(require, "feature_oculus_config")
+        if ok_cfg and type(cfg) == "table" and type(cfg.refresh_hotkey_help) == "function" then
+            pcall(function() cfg.refresh_hotkey_help(true) end)
+        end
+    end)
+end
 
 -- ---------- state ----------
 
@@ -179,13 +324,20 @@ local grab_diag = {
     camera_failures = 0,
     move_failures = 0,
     auto_cancels = 0,
+    clamped_steps = 0,
+    rotation_writes = 0,
+    rotation_failures = 0,
     last_tick_clock = 0,
     last_camera_error = nil,
     last_move_error = nil,
+    last_rotation_error = nil,
 }
 local grab_tick_fn = nil
 local grab_loop_driver = nil
 local grab_engine_tick_started = false
+local pending_grab = nil
+local pending_grab_token = 0
+local last_grab_finish_clock = -1000.0
 local _oculus_is_active
 -- Shape:
 --   {
@@ -199,11 +351,72 @@ local _oculus_is_active
 --     z_offset    = number,               -- cm above camera plane
 --     yaw_offset  = number,               -- deg added to held actor yaw
 --     scale       = number,               -- uniform scalar
+--     scale_dirty = bool,                 -- pending uniform scale write on tick
+--     rotation_dirty = bool,              -- pending rotation write on tick
 --     mode        = "move" | "rot" | "z" | "scale",
 --     dest        = { X, Y, Z },          -- pre-allocated, mutated in place
 --     rot         = { Pitch, Yaw, Roll }, -- pre-allocated, mutated in place
+--     last_dest   = { X, Y, Z },          -- last successfully requested dest
+--     last_dest_valid = bool,             -- false for the first tick
 --     loop_armed  = bool,                 -- LoopAsync handle is live
 --   }
+
+local function refresh_hotkey_help(force)
+    local cfg = package.loaded["feature_oculus_config"]
+    if type(cfg) == "table" and type(cfg.refresh_hotkey_help) == "function" then
+        pcall(function() cfg.refresh_hotkey_help(force == true) end)
+    end
+end
+
+local function grab_mode_label(g)
+    if type(g) ~= "table" then return "Move" end
+    if g.pending_finish == true then
+        local kind = tostring(g.pending_finish_kind or "release")
+        if kind == "cancel" then return "Cancelling" end
+        return "Releasing"
+    end
+    local mode = tostring(g.mode or "move")
+    if mode == "rot" then return "Rotate" end
+    if mode == "z" then return "Z Lift" end
+    if mode == "scale" then return "Scale" end
+    return "Move"
+end
+
+local function grab_top_status(g)
+    g = g or grab or {}
+    return string.format(
+        "Grab Mode: %s\nActor: %s",
+        grab_mode_label(g),
+        tostring(g.name or "<target>"))
+end
+
+local function update_grab_overlay(force, refresh_help_panel)
+    if grab then
+        pcall(function() feature_umg.oculus_rotation_overlay(true, grab_top_status(grab), "", "grab") end)
+        if force == true or refresh_help_panel == true then
+            refresh_hotkey_help(force == true)
+        end
+    else
+        pcall(function() feature_umg.oculus_rotation_overlay(false) end)
+    end
+end
+
+local function hide_grab_overlay()
+    pcall(function() feature_umg.oculus_rotation_overlay(false) end)
+end
+
+local function restart_cooldown_remaining()
+    local elapsed = os.clock() - (tonumber(last_grab_finish_clock) or -1000.0)
+    local remaining = GRAB_RESTART_COOLDOWN_SECONDS - elapsed
+    if remaining > 0 then return remaining end
+    return 0
+end
+
+local function restart_cooldown_message()
+    local remaining = restart_cooldown_remaining()
+    if remaining <= 0 then return nil end
+    return string.format("grab settling %.2fs", remaining)
+end
 
 -- ---------- camera viewpoint ----------
 
@@ -701,6 +914,33 @@ local function vec_len_xy(dx, dy, dz)
     return math.sqrt(dx * dx + dy * dy + dz * dz)
 end
 
+local function clamp_grab_destination_step(g)
+    if type(g) ~= "table" or not g.dest then return end
+    if GRAB_MAX_FOLLOW_STEP_CM <= 0 then return end
+    if g.last_dest_valid ~= true or not g.last_dest then
+        return
+    end
+    local dx = (g.dest.X or 0) - (g.last_dest.X or 0)
+    local dy = (g.dest.Y or 0) - (g.last_dest.Y or 0)
+    local dz = (g.dest.Z or 0) - (g.last_dest.Z or 0)
+    local dist = vec_len_xy(dx, dy, dz)
+    if dist <= GRAB_MAX_FOLLOW_STEP_CM or dist <= 0.001 then return end
+    local t = GRAB_MAX_FOLLOW_STEP_CM / dist
+    g.dest.X = (g.last_dest.X or 0) + dx * t
+    g.dest.Y = (g.last_dest.Y or 0) + dy * t
+    g.dest.Z = (g.last_dest.Z or 0) + dz * t
+    grab_diag.clamped_steps = (grab_diag.clamped_steps or 0) + 1
+end
+
+local function remember_grab_destination(g)
+    if type(g) ~= "table" or not g.dest then return end
+    g.last_dest = g.last_dest or { X = 0, Y = 0, Z = 0 }
+    g.last_dest.X = g.dest.X or 0
+    g.last_dest.Y = g.dest.Y or 0
+    g.last_dest.Z = g.dest.Z or 0
+    g.last_dest_valid = true
+end
+
 -- ---------- tick body ----------
 
 local function restore_grab_snapshot(g)
@@ -717,6 +957,94 @@ local function disarm_grab_loop(g)
     if type(g) == "table" then g.loop_armed = false end
     grab_tick_fn = nil
     grab_loop_driver = nil
+end
+
+local function schedule_transform_capture(actor, source)
+    if not feature_actor.is_valid_object(actor) then return end
+    schedule_game_thread(POST_FINISH_CAPTURE_MS, function()
+        if not feature_actor.is_valid_object(actor) then return end
+        local ok_capture, capture_detail = feature_oculus_transform.capture_actor(actor, source)
+        if ok_capture and tostring(capture_detail) == "disabled" then
+            return
+        elseif ok_capture then
+            print("[RSDWTools] " .. tostring(source) .. " transform refreshed")
+        else
+            print("[RSDWTools] " .. tostring(source) .. " transform capture failed: " .. tostring(capture_detail))
+        end
+    end)
+end
+
+local function schedule_runtime_item_stabilize(actor, name)
+    if not feature_actor.is_valid_object(actor) or not feature_inventory._is_runtime_world_item then
+        return
+    end
+    local ok_item, is_item = pcall(function() return feature_inventory._is_runtime_world_item(actor) end)
+    if not ok_item or is_item ~= true then return end
+    schedule_game_thread(POST_FINISH_STABILIZE_MS, function()
+        if not feature_actor.is_valid_object(actor) then return end
+        local ok_stable, stable_result = feature_inventory.stabilize_runtime_world_item(actor)
+        if ok_stable then
+            local actions = stable_result and stable_result.actions or {}
+            local failures = stable_result and stable_result.failures or {}
+            print(string.format("[RSDWTools] grab.release stabilized runtime item %s actions=%d failures=%d",
+                tostring(name), #actions, #failures))
+        else
+            print("[RSDWTools] grab.release runtime item stabilize failed for " .. tostring(name))
+        end
+    end)
+end
+
+local function prepare_runtime_item_for_grab(actor, name, options, context)
+    if not is_runtime_world_item_actor(actor) then return end
+    options.safe_profile = true
+    options.location_only = true
+    options.skip_force_movable = true
+
+    if type(feature_inventory.stabilize_runtime_world_item_fast) ~= "function" then return end
+    local ok_call, ok_stable, stable_result = pcall(function()
+        return feature_inventory.stabilize_runtime_world_item_fast(actor)
+    end)
+    if not ok_call then
+        print("[RSDWTools] grab.runtime pre-stabilize raised for "
+            .. tostring(name) .. ": " .. tostring(ok_stable))
+        return
+    end
+    if ok_stable then
+        local actions = stable_result and stable_result.actions or {}
+        local failures = stable_result and stable_result.failures or {}
+        print(string.format("[RSDWTools] grab.runtime pre-stabilized %s context=%s actions=%d failures=%d",
+            tostring(name), tostring(context or "grab"), #actions, #failures))
+    else
+        local err = stable_result and stable_result.error or "stabilize failed"
+        print("[RSDWTools] grab.runtime pre-stabilize failed for "
+            .. tostring(name) .. ": " .. tostring(err))
+    end
+end
+
+local function schedule_finish_side_effects(g, kind)
+    if type(g) ~= "table" then return end
+    local name = tostring(g.name or "<grab>")
+    local source = kind == "cancel" and "grab.cancel" or "grab.release"
+    last_grab_finish_clock = os.clock()
+    -- Keep release/cancel finalization intentionally tiny. The held actor has
+    -- already received its final movement tick; doing runtime-item
+    -- stabilization or transform capture from this path has proven too crashy
+    -- in Shipping. Those heavier actor reads/writes should be invoked by an
+    -- explicit command once placement is stable.
+    schedule_help_refresh(POST_FINISH_HELP_MS)
+    print("[RSDWTools] " .. source .. " applied: " .. name .. " (post actor work skipped)")
+end
+
+local function apply_pending_finish(g)
+    if type(g) ~= "table" or g.pending_finish ~= true then return false end
+    local elapsed = os.clock() - (tonumber(g.pending_finish_clock) or 0.0)
+    if elapsed < FINISH_SETTLE_SECONDS then return false end
+    local kind = tostring(g.pending_finish_kind or "release")
+    if kind == "cancel" then
+        restore_grab_snapshot(g)
+    end
+    schedule_finish_side_effects(g, kind)
+    return true
 end
 
 -- Compute the desired world transform from the camera viewpoint + the
@@ -746,6 +1074,9 @@ local function tick_grab()
         print("[RSDWTools] grab: target invalid, releasing.")
         return false
     end
+    if g.pending_finish == true and apply_pending_finish(g) then
+        return false
+    end
     local cam_loc, cam_rot, err = get_camera_viewpoint()
     if not cam_loc then
         grab_diag.camera_failures = (grab_diag.camera_failures or 0) + 1
@@ -764,11 +1095,7 @@ local function tick_grab()
     g.dest.X = (cam_loc.X or 0) + fx * g.distance
     g.dest.Y = (cam_loc.Y or 0) + fy * g.distance
     g.dest.Z = (cam_loc.Z or 0) + fz * g.distance + g.z_offset
-
-    local held_rotation = g.fixed_rotation or g.orig_rot or { Pitch = 0, Yaw = 0, Roll = 0 }
-    g.rot.Pitch = held_rotation.Pitch or 0
-    g.rot.Yaw = ((held_rotation.Yaw or 0) + g.yaw_offset) % 360.0
-    g.rot.Roll = held_rotation.Roll or 0
+    clamp_grab_destination_step(g)
 
     local moved, move_err = feature_actor.move_actor(actor, g.dest)
     if moved == false then
@@ -777,9 +1104,35 @@ local function tick_grab()
         -- One failed write isn't fatal -- the engine occasionally
         -- rejects a sweep when the destination collides. Keep going ;
         -- next tick the camera has moved a bit and may succeed.
+        if apply_pending_finish(g) then
+            return false
+        end
         return true
     end
-    feature_actor.set_actor_rotation(actor, g.rot)
+    remember_grab_destination(g)
+    if g.location_only ~= true and g.rotation_dirty == true then
+        local held_rotation = g.fixed_rotation or g.orig_rot or { Pitch = 0, Yaw = 0, Roll = 0 }
+        g.rot.Pitch = held_rotation.Pitch or 0
+        g.rot.Yaw = ((held_rotation.Yaw or 0) + g.yaw_offset) % 360.0
+        g.rot.Roll = held_rotation.Roll or 0
+        if feature_actor.set_actor_rotation(actor, g.rot) then
+            g.rotation_dirty = false
+            grab_diag.rotation_writes = (grab_diag.rotation_writes or 0) + 1
+        else
+            grab_diag.rotation_failures = (grab_diag.rotation_failures or 0) + 1
+            grab_diag.last_rotation_error = "set_actor_rotation failed"
+            g.rotation_dirty = false
+        end
+    end
+    if g.scale_dirty == true then
+        local s = g.scale or 1.0
+        if feature_actor.set_actor_scale3d(actor, { X = s, Y = s, Z = s }) then
+            g.scale_dirty = false
+        end
+    end
+    if apply_pending_finish(g) then
+        return false
+    end
     return true
 end
 
@@ -798,12 +1151,14 @@ local function start_loop()
             print("[RSDWTools] grab: tick failed: " .. tostring(keep))
             grab = nil
             disarm_grab_loop(this_grab)
+            hide_grab_overlay()
             return true
         end
         if not keep then
             local finished = grab
             grab = nil
             disarm_grab_loop(finished or this_grab)
+            hide_grab_overlay()
             return true
         end
         return false
@@ -903,6 +1258,47 @@ _oculus_is_active = function()
     return ok and v == true
 end
 
+local function resolve_grab_target(name)
+    local actor, picked_name, source, loc
+    if name and name ~= "" then
+        actor = feature_actor.resolve_actor_by_name(name)
+        if not actor then return nil, nil, nil, nil, "actor not found: " .. tostring(name) end
+        picked_name = name
+        source = "name"
+        loc = feature_actor.actor_location(actor)
+        return actor, picked_name, source, loc, nil
+    end
+
+    -- Prefer the game's interaction detector when the player char is in
+    -- control ; in oculus mode the detector is irrelevant (it is tied to
+    -- the hidden player char), so trace directly.
+    local picked = nil
+    if not _oculus_is_active() then
+        picked = _detector_pick()
+        if picked then source = "detector" end
+    end
+    if not picked then
+        local hit_actor, impact, terr = _trace_from_camera(LOOKAT_MAX_DISTANCE)
+        local item_actor, item_loc, item_source = pick_world_item_candidate({ trace_impact = impact })
+        if item_actor then
+            picked = item_actor
+            source = item_source
+            loc = item_loc
+        elseif hit_actor then
+            picked = hit_actor
+            source = "trace"
+            loc = impact
+        else
+            return nil, nil, nil, nil, "lookat: " .. tostring(terr)
+        end
+    end
+
+    actor = picked
+    picked_name = feature_actor.short_name_of(actor) or "<unnamed>"
+    loc = loc or feature_actor.actor_location(actor)
+    return actor, picked_name, source or "unknown", loc, nil
+end
+
 -- camera.grab.start [<name>]
 --
 -- With <name>: resolve via feature_actor by exact short name (same path
@@ -921,32 +1317,8 @@ local function _begin_grab(actor, picked_name, options)
     -- outside their native systems can desync collision, nav, placement or
     -- persistence state. Match on cheap actor properties and names rather
     -- than walking class ancestry, which has been unsafe in this UE4SS build.
-    local function _grab_block_reason(a)
-        local cls_name, full_name
-        pcall(function()
-            local c = a:GetClass()
-            if c then cls_name = c:GetName() end
-        end)
-        pcall(function() full_name = a:GetFullName() end)
-        local hay = ((cls_name or "") .. " " .. (full_name or "")):lower()
-
-        local building_piece_data_index
-        pcall(function() building_piece_data_index = a.BuildingPieceDataIndex end)
-        if type(building_piece_data_index) == "number" then
-            return "building piece", "BuildingPieceDataIndex=" .. tostring(building_piece_data_index)
-        end
-
-        if hay:find("staticmeshactor", 1, true)
-            or hay:find("instancedfoliageactor", 1, true)
-            or hay:find("landscapestreamingproxy", 1, true)
-            or hay:find("landscapeproxy", 1, true)
-            or hay:find("bpp_", 1, true) then
-            return "world-static/environment", cls_name or full_name or "<unknown>"
-        end
-        return nil
-    end
     if grab_safety_enabled then
-        local blocked_kind, blocked_detail = _grab_block_reason(actor)
+        local blocked_kind, blocked_detail = grab_block_reason(actor)
         if blocked_kind then
             return false, string.format(
                 "refusing to grab '%s' : target is %s (%s) and is unsafe to move with camera.grab ; use camera.grab.safety off to bypass",
@@ -988,7 +1360,20 @@ local function _begin_grab(actor, picked_name, options)
     end
     local horiz = proj
 
-    feature_actor.force_actor_movable(actor)
+    print("[RSDWTools] grab.begin " .. target_diagnostic_line(actor, options.source or "unknown", orig_loc)
+        .. string.format(" safe=%s location_only=%s skip_movable=%s",
+            tostring(options.safe_profile == true),
+            tostring(options.location_only == true),
+            tostring(options.skip_force_movable == true)))
+
+    if options.skip_force_movable == true then
+        print("[RSDWTools] grab.begin skipping force_actor_movable for " .. tostring(picked_name))
+    else
+        local ok_force, force_err = pcall(function() feature_actor.force_actor_movable(actor) end)
+        if not ok_force then
+            print("[RSDWTools] grab.begin force_actor_movable failed: " .. tostring(force_err))
+        end
+    end
 
     local cur_scale = feature_actor.get_actor_scale3d(actor) or { X = 1, Y = 1, Z = 1 }
     local uniform = ((cur_scale.X or 1) + (cur_scale.Y or 1) + (cur_scale.Z or 1)) / 3.0
@@ -996,9 +1381,13 @@ local function _begin_grab(actor, picked_name, options)
     grab_diag.ticks = 0
     grab_diag.camera_failures = 0
     grab_diag.move_failures = 0
+    grab_diag.clamped_steps = 0
+    grab_diag.rotation_writes = 0
+    grab_diag.rotation_failures = 0
     grab_diag.last_tick_clock = 0
     grab_diag.last_camera_error = nil
     grab_diag.last_move_error = nil
+    grab_diag.last_rotation_error = nil
 
     grab = {
         actor      = actor,
@@ -1019,6 +1408,8 @@ local function _begin_grab(actor, picked_name, options)
         z_offset   = z_residual,
         yaw_offset = 0.0,
         scale      = uniform,
+        scale_dirty = false,
+        rotation_dirty = true,
         mode       = "move",
         dest       = { X = 0, Y = 0, Z = 0 },
         rot        = fixed_rotation and {
@@ -1030,11 +1421,19 @@ local function _begin_grab(actor, picked_name, options)
             Yaw = orig_rot.Yaw or 0,
             Roll = orig_rot.Roll or 0,
         },
+        last_dest = { X = orig_loc.X or 0, Y = orig_loc.Y or 0, Z = orig_loc.Z or 0 },
+        last_dest_valid = false,
         fixed_rotation = fixed_rotation,
+        location_only = options.location_only == true,
+        safe_profile = options.safe_profile == true,
         loop_armed = false,
+        pending_finish = false,
+        pending_finish_kind = nil,
+        pending_finish_clock = 0,
+        last_finish_hotkey_clock = 0,
     }
     start_loop()
-    _toast("Grabbed: " .. _label_for(actor), 1.5)
+    update_grab_overlay(true)
     return true, string.format("grabbed %s @ dist=%.0f z=%.0f", picked_name, horiz, z_residual)
 end
 
@@ -1049,6 +1448,8 @@ function M.start(name)
     if grab then
         return false, "already grabbing " .. tostring(grab.name) .. " ; release first"
     end
+    local cooldown = restart_cooldown_message()
+    if cooldown then return false, cooldown end
     -- Round 62: require oculus freecam to be active before allowing
     -- a grab to start. The grab pipeline anchors the actor to the
     -- camera viewpoint each tick ; outside oculus mode that viewpoint
@@ -1060,41 +1461,98 @@ function M.start(name)
         return false, "camera.grab.start requires oculus freecam to be active"
     end
 
-    local actor, picked_name
-    if name and name ~= "" then
-        actor = feature_actor.resolve_actor_by_name(name)
-        if not actor then return false, "actor not found: " .. tostring(name) end
-        picked_name = name
+    local actor, picked_name, source, _loc, err = resolve_grab_target(name)
+    if not feature_actor.is_valid_object(actor) then return false, tostring(err or "actor not found") end
+    return _begin_grab(actor, picked_name, { source = source })
+end
+
+local function begin_pending_safe_grab(token)
+    local pending = pending_grab
+    if not pending or pending.token ~= token then return end
+    pending_grab = nil
+    if grab then
+        print("[RSDWTools] grab.safe skipped: already grabbing " .. tostring(grab.name))
+        return
+    end
+    if not feature_actor.is_valid_object(pending.actor) then
+        print("[RSDWTools] grab.safe failed: pending target invalid " .. tostring(pending.name))
+        _toast("Safe grab failed: target lost", 2.0)
+        schedule_help_refresh(1)
+        return
+    end
+    local ok, result_ok, result_detail = pcall(function()
+        local options = { source = pending.source }
+        prepare_runtime_item_for_grab(pending.actor, pending.name, options, "safe")
+        return _begin_grab(pending.actor, pending.name, options)
+    end)
+    if not ok then
+        print("[RSDWTools] grab.safe raised: " .. tostring(result_ok))
+        _toast("Safe grab failed", 2.0)
+        schedule_help_refresh(1)
+        return
+    end
+    if result_ok then
+        print("[RSDWTools] grab.safe started: " .. tostring(result_detail))
     else
-        -- Prefer the game's interaction detector when the player char
-        -- is in control ; in oculus mode the detector is irrelevant
-        -- (it's tied to the hidden player char), so trace directly.
-        local picked = nil
-        if not _oculus_is_active() then
-            picked = _detector_pick()
-        end
-        if not picked then
-            local hit_actor, _impact, terr = _trace_from_camera(LOOKAT_MAX_DISTANCE)
-            local item_actor = select(1, pick_world_item_candidate({ trace_impact = _impact }))
-            if item_actor then
-                picked = item_actor
-            elseif hit_actor then
-                picked = hit_actor
-            else
-                return false, "lookat: " .. tostring(terr)
-            end
-        end
-        actor = picked
-        picked_name = feature_actor.short_name_of(actor) or "<unnamed>"
+        print("[RSDWTools] grab.safe failed: " .. tostring(result_detail))
+        _toast("Safe grab failed: " .. tostring(result_detail), 2.0)
+        schedule_help_refresh(1)
+    end
+end
+
+function M.start_safe(name)
+    if grab then
+        return false, "already grabbing " .. tostring(grab.name) .. " ; release first"
+    end
+    local cooldown = restart_cooldown_message()
+    if cooldown then return false, cooldown end
+    if pending_grab then
+        return false, "safe grab already pending " .. tostring(pending_grab.name)
+    end
+    if not _oculus_is_active() then
+        return false, "camera.grab.start_safe requires oculus freecam to be active"
     end
 
-    return _begin_grab(actor, picked_name)
+    local actor, picked_name, source, loc, err = resolve_grab_target(name)
+    if not feature_actor.is_valid_object(actor) then return false, tostring(err or "actor not found") end
+
+    local diag = target_diagnostic_line(actor, source, loc)
+    print("[RSDWTools] grab.safe probe " .. diag)
+    pending_grab_token = pending_grab_token + 1
+    local token = pending_grab_token
+    pending_grab = {
+        token = token,
+        actor = actor,
+        name = picked_name,
+        source = source,
+    }
+
+    local function run()
+        begin_pending_safe_grab(token)
+    end
+
+    if LoopAsync then
+        LoopAsync(SAFE_GRAB_DELAY_MS, function()
+            if ExecuteInGameThread then
+                ExecuteInGameThread(run)
+            else
+                run()
+            end
+            return true
+        end)
+    else
+        run()
+    end
+
+    return true, string.format("queued safe grab in %dms; %s", SAFE_GRAB_DELAY_MS, diag)
 end
 
 function M.start_item()
     if grab then
         return false, "already grabbing " .. tostring(grab.name) .. " ; release first"
     end
+    local cooldown = restart_cooldown_message()
+    if cooldown then return false, cooldown end
     if not _oculus_is_active() then
         return false, "camera.grab.item requires oculus freecam to be active"
     end
@@ -1103,7 +1561,9 @@ function M.start_item()
         return false, tostring(err or "no runtime world item near reticle")
     end
     local picked_name = feature_actor.short_name_of(actor) or "<unnamed item>"
-    return _begin_grab(actor, picked_name)
+    local options = { source = "trace.item" }
+    prepare_runtime_item_for_grab(actor, picked_name, options, "item")
+    return _begin_grab(actor, picked_name, options)
 end
 
 function M.toggle_item()
@@ -1122,9 +1582,12 @@ end
 -- intended workflow is "fly around in oculus, spawn at reticle, then
 -- nudge the new actor into precise position before releasing".
 local function start_lastspawned_with_options(options)
+    options = options or {}
     if grab then
         return false, "already grabbing " .. tostring(grab.name) .. " ; release first"
     end
+    local cooldown = restart_cooldown_message()
+    if cooldown then return false, cooldown end
     if not _oculus_is_active() then
         return false, "camera.grab.lastspawned requires oculus freecam to be active"
     end
@@ -1133,6 +1596,7 @@ local function start_lastspawned_with_options(options)
         return false, "no lastspawned actor (or it has been destroyed): " .. tostring(rerr)
     end
     local picked_name = feature_actor.short_name_of(actor) or "lastspawned"
+    prepare_runtime_item_for_grab(actor, picked_name, options, "lastspawned")
     if options and options.scale then
         local ok_scale = feature_actor.set_actor_scale3d(actor, options.scale)
         if not ok_scale then
@@ -1141,6 +1605,39 @@ local function start_lastspawned_with_options(options)
     end
     if options and options.rotation then
         local ok_rot = feature_actor.set_actor_rotation(actor, options.rotation)
+        if not ok_rot then
+            return false, "spawned actor found, but source rotation copy failed"
+        end
+    end
+    return _begin_grab(actor, picked_name, options)
+end
+
+function M.start_actor_preserving_transform(actor, rotation, scale, options)
+    options = options or {}
+    if grab then
+        return false, "already grabbing " .. tostring(grab.name) .. " ; release first"
+    end
+    if options.bypass_cooldown ~= true then
+        local cooldown = restart_cooldown_message()
+        if cooldown then return false, cooldown end
+    end
+    if not _oculus_is_active() then
+        return false, "camera.grab.start_actor_preserving_transform requires oculus freecam to be active"
+    end
+    if not feature_actor.is_valid_object(actor) then
+        return false, "actor is no longer valid"
+    end
+
+    local picked_name = feature_actor.short_name_of(actor) or "spawned actor"
+    prepare_runtime_item_for_grab(actor, picked_name, options, options.context or "deferred_clone")
+    if scale then
+        local ok_scale = feature_actor.set_actor_scale3d(actor, scale)
+        if not ok_scale then
+            return false, "spawned actor found, but source scale copy failed"
+        end
+    end
+    if rotation then
+        local ok_rot = feature_actor.set_actor_rotation(actor, rotation)
         if not ok_rot then
             return false, "spawned actor found, but source rotation copy failed"
         end
@@ -1243,6 +1740,15 @@ function M.lookat_item()
     )
 end
 
+function M.probe(name)
+    local actor, picked_name, source, loc, err = resolve_grab_target(name)
+    if not feature_actor.is_valid_object(actor) then return false, tostring(err or "no actor under reticle") end
+    local detail = target_diagnostic_line(actor, source, loc)
+    print("[RSDWTools] camera.grab.probe " .. detail)
+    _toast("Probe: " .. _label_for(actor), 1.5)
+    return true, detail .. " picked=" .. tostring(picked_name)
+end
+
 function M.destroy_lookat()
     local actor, loc, source, err = pick_target_under_reticle()
     if not feature_actor.is_valid_object(actor) then return false, tostring(err or "no actor under reticle") end
@@ -1271,6 +1777,7 @@ function M.destroy_lookat()
         local old_grab = grab
         grab = nil
         disarm_grab_loop(old_grab)
+        hide_grab_overlay()
     end
     if not _destroy_actor(actor) then return false, "destroy failed: " .. tostring(short) end
     _toast("Destroyed: " .. label, 1.5)
@@ -1279,40 +1786,27 @@ function M.destroy_lookat()
 end
 
 -- camera.grab.release   -- drop in place
-function M.release()
+local function queue_finish(kind)
     if not grab then return false, "not grabbing anything" end
-    local name = grab.name
-    local actor = grab.actor
-    local label = (feature_actor.is_valid_object(grab.actor) and _label_for(grab.actor)) or name
-    local stabilize_detail = ""
-    if feature_actor.is_valid_object(actor)
-       and feature_inventory._is_runtime_world_item
-       and feature_inventory._is_runtime_world_item(actor) then
-        local ok_stable, stable_result = feature_inventory.stabilize_runtime_world_item(actor)
-        if ok_stable then
-            local actions = stable_result and stable_result.actions or {}
-            local failures = stable_result and stable_result.failures or {}
-            stabilize_detail = string.format(" + stabilized runtime item actions=%d failures=%d",
-                #actions, #failures)
-        else
-            stabilize_detail = " + runtime item stabilize failed"
-        end
+    local g = grab
+    local now = os.clock()
+    local last = tonumber(g.last_finish_hotkey_clock) or 0.0
+    if g.pending_finish == true then
+        return true, tostring(g.pending_finish_kind or "finish") .. " already queued " .. tostring(g.name)
     end
-    local transform_detail = ""
-    if feature_actor.is_valid_object(actor) then
-        local ok_capture, capture_detail = feature_oculus_transform.capture_actor(actor, "grab.release")
-        if ok_capture then
-            transform_detail = " + transform refreshed"
-        else
-            transform_detail = " + transform refresh failed"
-            print("[RSDWTools] camera.grab.release transform capture failed: " .. tostring(capture_detail))
-        end
+    if (now - last) < FINISH_HOTKEY_DEBOUNCE_SECONDS then
+        return true, "finish already queued " .. tostring(g.name)
     end
-    _toast("Released: " .. label, 1.5)
-    local old_grab = grab
-    grab = nil
-    disarm_grab_loop(old_grab)
-    return true, "released " .. name .. stabilize_detail .. transform_detail
+    g.last_finish_hotkey_clock = now
+    g.pending_finish = true
+    g.pending_finish_kind = kind == "cancel" and "cancel" or "release"
+    g.pending_finish_clock = now
+    update_grab_overlay(true)
+    return true, tostring(g.pending_finish_kind) .. " queued " .. tostring(g.name)
+end
+
+function M.release()
+    return queue_finish("release")
 end
 
 -- camera.grab.toggle [<name>] -- one verb, two behaviors. If something
@@ -1326,20 +1820,48 @@ function M.toggle(name)
     return M.start(name)
 end
 
+function M.toggle_safe(name)
+    if grab then
+        return M.release()
+    end
+    if pending_grab then
+        local name_pending = pending_grab.name
+        pending_grab_token = pending_grab_token + 1
+        pending_grab = nil
+        schedule_help_refresh(1)
+        return true, "cancelled pending safe grab " .. tostring(name_pending)
+    end
+    return M.start_safe(name)
+end
+
 -- camera.grab.cancel    -- drop and restore start transform
 function M.cancel()
+    return queue_finish("cancel")
+end
+
+local function cancel_now(reason)
     if not grab then return false, "not grabbing anything" end
     local name = grab.name
     local old_grab = grab
     restore_grab_snapshot(old_grab)
     grab = nil
     disarm_grab_loop(old_grab)
-    return true, "cancelled " .. name .. " (restored)"
+    last_grab_finish_clock = os.clock()
+    hide_grab_overlay()
+    schedule_help_refresh(1)
+    return true, "cancelled " .. name .. " (restored; " .. tostring(reason or "now") .. ")"
 end
 
 function M.safe_cancel()
+    if pending_grab then
+        local name_pending = pending_grab.name
+        pending_grab_token = pending_grab_token + 1
+        pending_grab = nil
+        schedule_help_refresh(1)
+        return true, "cancelled pending safe grab " .. tostring(name_pending)
+    end
     if not grab then return true, "not grabbing" end
-    return M.cancel()
+    return cancel_now("safe_cancel")
 end
 
 -- camera.grab.mode <move|rot|z|scale>
@@ -1351,6 +1873,7 @@ function M.mode(mode_str)
         return false, "mode must be one of: move, rot, z, scale"
     end
     grab.mode = m
+    update_grab_overlay(true)
     return true, "mode=" .. m
 end
 
@@ -1375,12 +1898,28 @@ function M.safety(mode_str)
         return false, "usage: camera.grab.safety <on|off|toggle|status>"
     end
 
-    local label = grab_safety_enabled and "Grab safety: ON" or "Grab safety: OFF"
-    _toast(label, 1.5)
     if grab_safety_enabled then
         return true, "safety=on; camera.grab blocks unsafe world/static targets"
     end
     return true, "safety=off; camera.grab target blocks bypassed"
+end
+
+-- Shared target safety gate for Oculus tools that mutate actor transforms
+-- without entering a normal camera.grab session. It intentionally follows the
+-- same runtime toggle and block list as camera.grab so the user only has one
+-- safety switch to understand.
+function M.validate_target_safety(actor, action_label)
+    if not feature_actor.is_valid_object(actor) then return false, "invalid target" end
+    if not grab_safety_enabled then return true, "safety=off" end
+
+    local blocked_kind, blocked_detail = grab_block_reason(actor)
+    if not blocked_kind then return true, "safety=on" end
+
+    local name = feature_actor.short_name_of(actor) or "<unnamed>"
+    local action = tostring(action_label or "modify")
+    return false, string.format(
+        "refusing to %s '%s' : target is %s (%s) and is unsafe for Oculus transform modes ; use camera.grab.safety off to bypass",
+        action, tostring(name), tostring(blocked_kind), tostring(blocked_detail))
 end
 
 -- camera.grab.steps [distanceCm zCm yawDeg scaleDelta minScale maxScale]
@@ -1434,15 +1973,14 @@ function M.delta(delta_str)
         return true, string.format("z_offset=%.0f", grab.z_offset)
     elseif grab.mode == "rot" then
         grab.yaw_offset = (grab.yaw_offset + d * STEP_ROT_DEG) % 360.0
+        grab.rotation_dirty = true
         return true, string.format("yaw_offset=%.1f", grab.yaw_offset)
     elseif grab.mode == "scale" then
         local s = grab.scale + d * STEP_SCALE
         if s < SCALE_MIN then s = SCALE_MIN end
         if s > SCALE_MAX then s = SCALE_MAX end
         grab.scale = s
-        if feature_actor.is_valid_object(grab.actor) then
-            feature_actor.set_actor_scale3d(grab.actor, { X = s, Y = s, Z = s })
-        end
+        grab.scale_dirty = true
         return true, string.format("scale=%.3f", s)
     end
     return false, "unknown mode " .. tostring(grab.mode)
@@ -1457,6 +1995,7 @@ function M.rotate(delta_str)
     local d = tonumber(delta_str) or 1
     if d == 0 then d = 1 end
     grab.yaw_offset = (grab.yaw_offset + d * STEP_ROT_DEG) % 360.0
+    grab.rotation_dirty = true
     return true, string.format("yaw_offset=%.1f", grab.yaw_offset)
 end
 
@@ -1483,9 +2022,7 @@ function M.scale_delta(delta_str)
     if s < SCALE_MIN then s = SCALE_MIN end
     if s > SCALE_MAX then s = SCALE_MAX end
     grab.scale = s
-    if feature_actor.is_valid_object(grab.actor) then
-        feature_actor.set_actor_scale3d(grab.actor, { X = s, Y = s, Z = s })
-    end
+    grab.scale_dirty = true
     return true, string.format("scale=%.3f", s)
 end
 
@@ -1496,26 +2033,70 @@ function M.status()
         age = os.clock() - grab_diag.last_tick_clock
     end
     local diag = string.format(
-        "driver=%s ticks=%d age=%.2fs cam_fail=%d move_fail=%d auto_cancel=%d last_cam=%s last_move=%s",
+        "driver=%s ticks=%d age=%.2fs cam_fail=%d move_fail=%d rot_write=%d rot_fail=%d clamped=%d auto_cancel=%d last_cam=%s last_move=%s last_rot=%s",
         tostring(grab_loop_driver or "none"),
         tonumber(grab_diag.ticks) or 0,
         age,
         tonumber(grab_diag.camera_failures) or 0,
         tonumber(grab_diag.move_failures) or 0,
+        tonumber(grab_diag.rotation_writes) or 0,
+        tonumber(grab_diag.rotation_failures) or 0,
+        tonumber(grab_diag.clamped_steps) or 0,
         tonumber(grab_diag.auto_cancels) or 0,
         tostring(grab_diag.last_camera_error or "none"),
-        tostring(grab_diag.last_move_error or "none"))
+        tostring(grab_diag.last_move_error or "none"),
+        tostring(grab_diag.last_rotation_error or "none"))
+    if pending_grab then
+        return true, "pending name=" .. tostring(pending_grab.name)
+            .. " source=" .. tostring(pending_grab.source)
+            .. " safety=" .. grab_safety_label() .. " " .. diag
+    end
     if not grab then return true, "idle safety=" .. grab_safety_label() .. " " .. diag end
     return true, string.format(
-        "name=%s mode=%s dist=%.0f z=%.0f yaw=%.1f scale=%.3f safety=%s %s",
+        "name=%s mode=%s dist=%.0f z=%.0f yaw=%.1f scale=%.3f loc_only=%s safe=%s safety=%s finish=%s %s",
         grab.name, grab.mode, grab.distance, grab.z_offset,
-        grab.yaw_offset, grab.scale, grab_safety_label(), diag
+        grab.yaw_offset, grab.scale, tostring(grab.location_only == true),
+        tostring(grab.safe_profile == true), grab_safety_label(),
+        grab.pending_finish and tostring(grab.pending_finish_kind or "pending") or "none", diag
     )
 end
 
 -- Externally observable: are we currently grabbing? Used by feature_hotkeys
 -- to decide whether to dispatch wheel-delta verbs.
 function M.is_active() return grab ~= nil end
+
+function M.is_pending()
+    return pending_grab ~= nil
+end
+
+function M.is_modal_active()
+    return grab ~= nil or pending_grab ~= nil
+end
+
+function M.restart_cooldown_remaining()
+    return restart_cooldown_remaining()
+end
+
+function M.restart_cooldown_message()
+    return restart_cooldown_message()
+end
+
+function M.top_status()
+    return grab_top_status(grab)
+end
+
+function M.current_actor()
+    if not grab or not feature_actor.is_valid_object(grab.actor) then return nil end
+    return grab.actor, grab.name, "grab"
+end
+
+function M.help_details()
+    if pending_grab then
+        return "Starting safe grab..."
+    end
+    if not grab then return "" end
+    return "Move actor (Move camera)\nRotation Mode (R)\nScale Mode (V)"
+end
 
 -- pick_actor_under_reticle()  --  shared "what's under the crosshair?"
 -- helper for OTHER features that want to target without going through

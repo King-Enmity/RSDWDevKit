@@ -39,6 +39,7 @@ M._pressed_latch = { left_mouse = false, right_mouse = false, middle_mouse = fal
 M._generation = 0
 M._loop_started = false
 M._driver = nil
+M._deferred_active = false
 
 local POLL_ORDER = { "up", "down", "left_mouse", "right_mouse", "middle_mouse" }
 local MOUSE_TOKENS = { left_mouse = true, right_mouse = true, middle_mouse = true }
@@ -129,14 +130,19 @@ local function modifiers_exact(pc, entry)
     return true
 end
 
+local function entry_enabled(entry)
+    if entry.gen ~= M._generation then return false end
+    if entry.deferred == true and M._deferred_active ~= true then return false end
+    if entry.can_poll and not entry.can_poll() then return false end
+    return true
+end
+
 local function dispatch(pc, list)
     for _, entry in ipairs(list) do
-        if entry.gen == M._generation then
-            if (not entry.can_poll or entry.can_poll()) and modifiers_exact(pc, entry) then
-                local ok, err = pcall(entry.fn)
-                if not ok then
-                    print("[RSDWTools.wheel] callback error: " .. tostring(err))
-                end
+        if entry_enabled(entry) and modifiers_exact(pc, entry) then
+            local ok, err = pcall(entry.fn)
+            if not ok then
+                print("[RSDWTools.wheel] callback error: " .. tostring(err))
             end
         end
     end
@@ -156,7 +162,7 @@ end
 
 local function has_enabled_entry(list)
     for _, entry in ipairs(list) do
-        if entry.gen == M._generation and (not entry.can_poll or entry.can_poll()) then return true end
+        if entry_enabled(entry) then return true end
     end
     return false
 end
@@ -252,11 +258,18 @@ function M.bump_generation()
     for token, _ in pairs(MOUSE_TOKENS) do M._pressed_latch[token] = false end
 end
 
+function M.set_oculus_active(active)
+    M._deferred_active = active == true
+    for token, _ in pairs(MOUSE_TOKENS) do M._pressed_latch[token] = false end
+    if M._deferred_active and has_bindings() then ensure_loop() end
+    return true, "oculus_poll=" .. tostring(M._deferred_active)
+end
+
 -- direction:    "up", "down", WHEEL_*, or *_MOUSE_BUTTON
 -- mod_tokens:   array of VK-style modifier names ("LEFT_CONTROL" etc)
 -- callback:     zero-arg function fired on each matching wheel notch
 -- can_poll:     optional zero-arg predicate checked before polling the key
-function M.register(direction, mod_tokens, callback, can_poll)
+local function register_internal(direction, mod_tokens, callback, can_poll, deferred)
     direction = normalize_token(direction)
     if not POLLED_KEY_NAMES[direction] then return end
     if type(callback) ~= "function" then return end
@@ -281,8 +294,21 @@ function M.register(direction, mod_tokens, callback, can_poll)
         fn        = callback,
         can_poll  = type(can_poll) == "function" and can_poll or nil,
         gen       = M._generation,
+        deferred  = deferred == true,
     })
-    ensure_loop()
+    if deferred == true then
+        if M._deferred_active then ensure_loop() end
+    else
+        ensure_loop()
+    end
+end
+
+function M.register(direction, mod_tokens, callback, can_poll)
+    register_internal(direction, mod_tokens, callback, can_poll, false)
+end
+
+function M.register_deferred(direction, mod_tokens, callback, can_poll)
+    register_internal(direction, mod_tokens, callback, can_poll, true)
 end
 
 function M.binding_count()
@@ -292,10 +318,11 @@ function M.binding_count()
 end
 
 function M.status()
-    return true, string.format("driver=%s bindings=%d generation=%d",
+    return true, string.format("driver=%s bindings=%d generation=%d oculus_poll=%s",
         tostring(M._driver or "none"),
         M.binding_count(),
-        tonumber(M._generation) or 0)
+        tonumber(M._generation) or 0,
+        tostring(M._deferred_active == true))
 end
 
 return M

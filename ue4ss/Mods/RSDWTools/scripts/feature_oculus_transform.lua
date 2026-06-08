@@ -13,6 +13,7 @@ local mod_paths = require("mod_paths")
 
 local CAPTURE_CACHE = {}
 local capture_counter = 0
+local capture_enabled = false
 
 local function is_valid(actor)
     return feature_actor.is_valid_object(actor)
@@ -89,7 +90,7 @@ local function snapshot_body(token, actor, source)
         .. "}"
 end
 
-function M.capture_actor(actor, source)
+local function write_actor_snapshot(actor, source)
     if not is_valid(actor) then
         return false, "invalid actor"
     end
@@ -102,6 +103,38 @@ function M.capture_actor(actor, source)
         return false, path_or_err
     end
     return true, token
+end
+
+function M.capture_actor(actor, source)
+    if capture_enabled ~= true then
+        return true, "disabled"
+    end
+    return write_actor_snapshot(actor, source)
+end
+
+function M.capture_actor_forced(actor, source)
+    return write_actor_snapshot(actor, source)
+end
+
+function M.capture(args)
+    local mode = tostring(args or ""):match("^%s*(.-)%s*$"):lower()
+    if mode == "" or mode == "status" then
+        return true, "capture=" .. (capture_enabled and "on" or "off")
+    end
+    if mode == "on" or mode == "true" or mode == "1" or mode == "enabled" or mode == "enable" then
+        capture_enabled = true
+    elseif mode == "off" or mode == "false" or mode == "0" or mode == "disabled" or mode == "disable" then
+        capture_enabled = false
+    elseif mode == "toggle" then
+        capture_enabled = not capture_enabled
+    else
+        return false, "usage: camera.oculus.transform.capture <on|off|toggle|status>"
+    end
+    return true, "capture=" .. (capture_enabled and "on" or "off")
+end
+
+function M.capture_enabled()
+    return capture_enabled == true
 end
 
 local function parse_apply_args(args)
@@ -163,7 +196,7 @@ function M.reload(args)
         return false, "actor no longer available: " .. tostring(name or token)
     end
 
-    local ok, detail = M.capture_actor(actor, "reload")
+    local ok, detail = M.capture_actor_forced(actor, "reload")
     if not ok then return false, detail end
     return true, string.format("reloaded %s token=%s", tostring(name), tostring(detail))
 end
@@ -188,7 +221,7 @@ function M.apply(args)
             loc_err and (" loc_err=" .. tostring(loc_err)) or "")
     end
 
-    M.capture_actor(actor, "apply")
+    M.capture_actor_forced(actor, "apply")
     return true, string.format("applied %s loc=(%.2f,%.2f,%.2f) rot=(%.2f,%.2f,%.2f) scale=(%.3f,%.3f,%.3f)",
         tostring(parsed.name),
         parsed.loc.X, parsed.loc.Y, parsed.loc.Z,

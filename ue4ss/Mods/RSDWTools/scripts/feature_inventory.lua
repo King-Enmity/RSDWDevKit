@@ -621,6 +621,11 @@ function M.stabilize_runtime_world_item(actor)
     return result.ok == true, result, before, after
 end
 
+function M.stabilize_runtime_world_item_fast(actor)
+    local result = apply_runtime_item_stabilize(actor)
+    return result.ok == true, result
+end
+
 function M.runtime_snapshot(args_str)
     local actor, target = resolve_runtime_item_target(args_str, true)
     if not actor then return false, target end

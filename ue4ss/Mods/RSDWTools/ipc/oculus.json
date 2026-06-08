@@ -182,33 +182,35 @@
       "gate": "repair",
       "commands": [
         {
-          "name": "Duplicate Actor",
-          "verb": "camera.oculus.duplicate",
-          "hotkey": "E"
-        },
-        {
-          "name": "Grab Actor",
-          "verb": "camera.grab.toggle",
-          "verb_off": "camera.grab.toggle",
-          "umg_text": "Release",
-          "umg_text_off": "Grab",
-          "hotkey": "LEFT_MOUSE_BUTTON",
-          "hotkey_mode": "toggle"
-        },
-        {
-          "name": "Inspect Actor",
+          "name": "Inspect",
           "verb": "camera.lookat",
           "hotkey": "RIGHT_MOUSE_BUTTON"
         },
         {
-          "name": "Rotation Mode",
-          "verb": "camera.oculus.rotation.toggle",
+          "name": "Grab",
+          "verb": "camera.oculus.mode.grab",
+          "hotkey": "G"
+        },
+        {
+          "name": "Release",
+          "verb": "camera.grab.release",
+          "help_gate": "grab",
+          "hotkey": "LEFT_MOUSE_BUTTON"
+        },
+        {
+          "name": "Rotate",
+          "verb": "camera.oculus.mode.rotation",
           "hotkey": "R"
         },
         {
-          "name": "Scale Mode",
-          "verb": "camera.oculus.scale.toggle",
-          "hotkey": "F"
+          "name": "Scale",
+          "verb": "camera.oculus.mode.scale",
+          "hotkey": "V"
+        },
+        {
+          "name": "Duplicate",
+          "verb": "camera.oculus.duplicate",
+          "hotkey": "E"
         },
         {
           "name": "Undo Grab",
@@ -217,7 +219,7 @@
           "hotkey": "MIDDLE_MOUSE_BUTTON"
         },
         {
-          "name": "Destroy Actor",
+          "name": "Destroy",
           "verb": "camera.destroy.lookat",
           "hotkey": "X",
           "modifiers": [
@@ -228,68 +230,42 @@
         {
           "name": "Rotate Left",
           "verb": "camera.grab.rotate -1",
-          "help_gate": "grab",
-          "hotkey": "WHEEL_UP"
+          "help_gate": "grab"
         },
         {
           "name": "Rotate Right",
-          "verb": "camera.grab.rotate \u002B1",
-          "help_gate": "grab",
-          "hotkey": "WHEEL_DOWN"
+          "verb": "camera.grab.rotate +1",
+          "help_gate": "grab"
         },
         {
           "name": "Scale Up",
-          "verb": "camera.grab.scale \u002B1",
-          "help_gate": "grab",
-          "hotkey": "WHEEL_UP",
-          "modifiers": [
-            "LEFT_SHIFT"
-          ]
+          "verb": "camera.grab.scale +1",
+          "help_gate": "grab"
         },
         {
           "name": "Scale Down",
           "verb": "camera.grab.scale -1",
-          "help_gate": "grab",
-          "hotkey": "WHEEL_DOWN",
-          "modifiers": [
-            "LEFT_SHIFT"
-          ]
+          "help_gate": "grab"
         },
         {
           "name": "Move Up",
-          "verb": "camera.grab.lift \u002B1",
-          "help_gate": "grab",
-          "hotkey": "WHEEL_UP",
-          "modifiers": [
-            "LEFT_CONTROL"
-          ]
+          "verb": "camera.grab.lift +1",
+          "help_gate": "grab"
         },
         {
           "name": "Move Down",
           "verb": "camera.grab.lift -1",
-          "help_gate": "grab",
-          "hotkey": "WHEEL_DOWN",
-          "modifiers": [
-            "LEFT_CONTROL"
-          ]
+          "help_gate": "grab"
         },
         {
           "name": "Move Forward",
-          "verb": "camera.grab.delta \u002B1",
-          "help_gate": "grab",
-          "hotkey": "WHEEL_UP",
-          "modifiers": [
-            "LEFT_ALT"
-          ]
+          "verb": "camera.grab.delta +1",
+          "help_gate": "grab"
         },
         {
           "name": "Move Back",
           "verb": "camera.grab.delta -1",
-          "help_gate": "grab",
-          "hotkey": "WHEEL_DOWN",
-          "modifiers": [
-            "LEFT_ALT"
-          ]
+          "help_gate": "grab"
         },
         {
           "name": "Grab Safety",
@@ -302,7 +278,7 @@
       "gate": "rotation",
       "commands": [
         {
-          "name": "Free Mode",
+          "name": "Free Rotation",
           "verb": "camera.oculus.rotation.mode free",
           "hotkey": "F"
         },
@@ -385,10 +361,6 @@
         {
           "name": "Restore Grab Safety",
           "verb": "camera.grab.safety on"
-        },
-        {
-          "name": "Exit",
-          "verb": "umg 2 Oculus: Disabled"
         }
       ]
     }

@@ -789,6 +789,15 @@ function M.preview(args_str)
             print("[RSDWTools] build.preview.preview: item parse warning: " .. tostring(ierr))
         end
     end
+    local actors = {}
+    if feature_buildings._parse_actors then
+        local parsed_actors, aerr = feature_buildings._parse_actors(body)
+        if parsed_actors then
+            actors = parsed_actors
+        else
+            print("[RSDWTools] build.preview.preview: actor parse warning: " .. tostring(aerr))
+        end
+    end
 
     -- Honour the user-picked anchor by promoting the matching piece
     -- to position 1. We try piece_id first (per-instance, unique),
@@ -898,15 +907,16 @@ function M.preview(args_str)
         name        = name,
         pieces      = pieces,
         items       = items,
+        actors      = actors,
         first       = first,
         idx_by_pd   = idx_by_pd,
         bmc         = bmc,
     }
 
     print(string.format(
-        "[RSDWTools] build.preview.preview: session armed, %d pieces queued, %d items queued ; aim with the engine's reticle preview, then run build.preview.commit (or build.preview.cancel)",
-        #pieces, #items))
-    return true, string.format("armed pieces=%d items=%d", #pieces, #items)
+        "[RSDWTools] build.preview.preview: session armed, %d pieces queued, %d items queued, %d actors queued ; aim with the engine's reticle preview, then run build.preview.commit (or build.preview.cancel)",
+        #pieces, #items, #actors))
+    return true, string.format("armed pieces=%d items=%d actors=%d", #pieces, #items, #actors)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1284,10 +1294,17 @@ function M.commit(args_str)
         item_counts = feature_buildings._replay_items_relative(
             sess.items or {}, first, anchor_loc, theta_deg)
     end
+    local actor_counts = { sent = 0, failed = 0, skipped = 0 }
+    if feature_buildings._replay_actors_relative then
+        actor_counts = feature_buildings._replay_actors_relative(
+            sess.actors or {}, first, anchor_loc, theta_deg)
+    end
 
     print(string.format(
-        "[RSDWTools] build.preview.commit: replayed sent=%d failed=%d skipped=%d items_sent=%d items_failed=%d items_skipped=%d",
-        sent, failed, skipped, item_counts.sent, item_counts.failed, item_counts.skipped))
+        "[RSDWTools] build.preview.commit: replayed sent=%d failed=%d skipped=%d items_sent=%d items_failed=%d items_skipped=%d actors_sent=%d actors_failed=%d actors_skipped=%d",
+        sent, failed, skipped,
+        item_counts.sent, item_counts.failed, item_counts.skipped,
+        actor_counts.sent, actor_counts.failed, actor_counts.skipped))
     clear_session()
 
     local suffix = ghost_mode and " (spawned as persistent ghosts)" or ""
@@ -1295,8 +1312,12 @@ function M.commit(args_str)
         and string.format(" items_sent=%d items_failed=%d items_skipped=%d",
             item_counts.sent, item_counts.failed, item_counts.skipped)
         or ""
-    return true, string.format("sent=%d failed=%d skipped=%d%s%s",
-        sent, failed, skipped, item_suffix, suffix)
+    local actor_suffix = ((sess.actors and #sess.actors or 0) > 0)
+        and string.format(" actors_sent=%d actors_failed=%d actors_skipped=%d",
+            actor_counts.sent, actor_counts.failed, actor_counts.skipped)
+        or ""
+    return true, string.format("sent=%d failed=%d skipped=%d%s%s%s",
+        sent, failed, skipped, item_suffix, actor_suffix, suffix)
 end
 
 -- ---------------------------------------------------------------------------

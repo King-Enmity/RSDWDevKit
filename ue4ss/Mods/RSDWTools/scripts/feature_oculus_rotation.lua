@@ -10,11 +10,18 @@ local feature_field = require("feature_field")
 local feature_grab = require("feature_grab")
 local feature_net = require("feature_net")
 local feature_oculus = require("feature_oculus")
+local feature_oculus_async = require("feature_oculus_async")
 local feature_oculus_transform = require("feature_oculus_transform")
 local feature_umg = require("feature_umg")
 
 local TICK_MS = 33
+local START_WARMUP_FRAMES = 4
 local MODE_HOTKEY_DEBOUNCE_SECONDS = 0.08
+local RESET_HOTKEY_DEBOUNCE_SECONDS = 0.18
+local STOP_HOTKEY_DEBOUNCE_SECONDS = 0.18
+local STOP_SETTLE_SECONDS = 0.08
+local POST_STOP_OVERLAY_MS = 80
+local POST_STOP_CAPTURE_MS = 140
 local settings = {
     yaw_sensitivity = 0.12,
     pitch_sensitivity = 0.08,
@@ -41,7 +48,6 @@ local state = {
     mouse_source = "none",
     camera_last_pitch = nil,
     camera_last_yaw = nil,
-    last_help_refresh_clock = 0,
     writes = 0,
     actor_write_failures = 0,
     root_writes = 0,
@@ -49,9 +55,20 @@ local state = {
     last_dy = 0.0,
     last_write_path = "none",
     last_mode_hotkey_clock = 0,
+    last_reset_hotkey_clock = 0,
+    pending_reset = false,
+    pending_reset_capture = false,
+    last_reset_ok = nil,
+    last_stop_hotkey_clock = 0,
+    pending_stop = false,
+    pending_stop_clock = 0,
+    pending_stop_capture = false,
+    pending_stop_overlay = false,
+    last_stop_detail = nil,
     loop_driver = nil,
     tick_fn = nil,
     engine_tick_started = false,
+    start_warmup_frames = 0,
 }
 
 local function is_valid(obj)
@@ -101,6 +118,10 @@ local function write_field(obj, field_name, value)
     return false, tostring(err)
 end
 
+local function zero_vector()
+    return { X = 0.0, Y = 0.0, Z = 0.0 }
+end
+
 local function movement_component()
     local opawn, err = feature_field.resolve_root("pawn.OculusComponent.OculusPawn")
     if not is_valid(opawn) then return nil, "no OculusPawn: " .. tostring(err) end
@@ -122,6 +143,13 @@ local function freeze_camera_motion()
     local ok_speed, speed_err = write_field(movement, "MaxSpeed", freeze_value)
     local ok_accel, accel_err = write_field(movement, "Acceleration", freeze_value)
     local ok_decel, decel_err = write_field(movement, "Deceleration", freeze_value)
+    if movement.StopMovementImmediately then
+        pcall(function() movement:StopMovementImmediately() end)
+    end
+    if movement.ConsumeInputVector then
+        pcall(function() movement:ConsumeInputVector() end)
+    end
+    write_field(movement, "Velocity", zero_vector())
     if not (ok_speed and ok_accel and ok_decel) then
         if saved.MaxSpeed ~= nil then write_field(movement, "MaxSpeed", saved.MaxSpeed) end
         if saved.Acceleration ~= nil then write_field(movement, "Acceleration", saved.Acceleration) end
@@ -449,34 +477,26 @@ function M.help_status()
 end
 
 function M.top_status()
-    local rot = state.current_rot or {}
     return string.format(
-        "Rotation Mode: %s\nActor: %s\nYaw: %.1f   Pitch: %.1f   Roll: %.1f",
+        "Rotation Mode: %s\nActor: %s",
         short_mode_label(state.mode),
-        tostring(state.name or "<target>"),
-        num(rot.Yaw, 0.0),
-        num(rot.Pitch, 0.0),
-        num(rot.Roll, 0.0)
+        tostring(state.name or "<target>")
     )
 end
 
 function M.help_details()
-    return string.format(
-        "Transforms Mode\nMode: %s\nR/Left Click: Confirm Changes",
-        mode_label(state.mode)
-    )
+    return "Adjust rotation (Mouse)\nConfirm changes (Left Click)\nGrab Mode (G)\nScale Mode (V)"
 end
 
-local function update_overlay(force)
-    local now = os.clock()
-    if not force and (now - (state.last_help_refresh_clock or 0)) < 0.50 then return end
-    state.last_help_refresh_clock = now
+local function update_overlay(force, refresh_help_panel)
     if state.active then
-        pcall(function() feature_umg.oculus_rotation_overlay(true, M.top_status(), "") end)
+        pcall(function() feature_umg.oculus_rotation_overlay(true, M.top_status(), "", "rotation") end)
     else
         pcall(function() feature_umg.oculus_rotation_overlay(false) end)
     end
-    refresh_hotkey_help()
+    if force == true or refresh_help_panel == true then
+        refresh_hotkey_help()
+    end
 end
 
 local function mode_hotkey_allows_force_refresh()
@@ -486,7 +506,8 @@ local function mode_hotkey_allows_force_refresh()
     return (now - last) >= MODE_HOTKEY_DEBOUNCE_SECONDS
 end
 
-local function cleanup()
+local function cleanup(options)
+    options = options or {}
     state.active = false
     state.actor = nil
     state.name = nil
@@ -499,7 +520,6 @@ local function cleanup()
     state.mouse_source = "none"
     state.camera_last_pitch = nil
     state.camera_last_yaw = nil
-    state.last_help_refresh_clock = 0
     state.writes = 0
     state.actor_write_failures = 0
     state.root_writes = 0
@@ -507,12 +527,25 @@ local function cleanup()
     state.last_dy = 0.0
     state.last_write_path = "none"
     state.last_mode_hotkey_clock = 0
+    state.last_reset_hotkey_clock = 0
+    state.pending_reset = false
+    state.pending_reset_capture = false
+    state.last_reset_ok = nil
+    state.last_stop_hotkey_clock = 0
+    state.pending_stop = false
+    state.pending_stop_clock = 0
+    state.pending_stop_capture = false
+    state.pending_stop_overlay = false
+    state.last_stop_detail = nil
     state.loop_armed = false
     state.tick_fn = nil
     state.loop_driver = nil
+    state.start_warmup_frames = 0
     restore_camera_look()
     restore_camera_motion()
-    update_overlay(true)
+    if options.defer_overlay ~= true then
+        update_overlay(true)
+    end
 end
 
 local function capture_current(reason)
@@ -525,6 +558,22 @@ local function stop_for_invalid_target()
     local label = tostring(state.name or "<target>")
     cleanup()
     pcall(function() feature_umg.toast("Rotation Mode stopped: target lost (" .. label .. ")", 2.0) end)
+end
+
+local function schedule_post_stop(actor, capture_requested, overlay_requested)
+    if overlay_requested == true then
+        feature_oculus_async.schedule_game_thread(POST_STOP_OVERLAY_MS, function()
+            pcall(function() feature_umg.oculus_rotation_overlay(false) end)
+            refresh_hotkey_help()
+        end)
+    end
+    if capture_requested == true then
+        feature_oculus_async.schedule_game_thread(POST_STOP_CAPTURE_MS, function()
+            if is_valid(actor) then
+                pcall(function() feature_oculus_transform.capture_actor(actor, "rotation.stop") end)
+            end
+        end)
+    end
 end
 
 local function apply_rotation_delta(dx, dy)
@@ -549,17 +598,86 @@ local function apply_rotation_delta(dx, dy)
     return set_live_rotation(state.actor, rot)
 end
 
+local function apply_pending_reset()
+    if state.pending_reset ~= true then return false end
+    state.pending_reset = false
+    if not state.active then return true end
+    if not is_valid(state.actor) then
+        stop_for_invalid_target()
+        return true
+    end
+    state.current_rot = copy_rot(state.original_rot)
+    state.last_dx = 0.0
+    state.last_dy = 0.0
+    state.mouse_last_x = nil
+    state.mouse_last_y = nil
+    state.camera_last_pitch = nil
+    state.camera_last_yaw = nil
+    local ok = set_live_rotation(state.actor, state.current_rot)
+    state.last_reset_ok = ok == true
+    if state.pending_reset_capture == true then
+        state.pending_reset_capture = false
+        capture_current("rotation.reset")
+    end
+    update_overlay(true)
+    if not ok then
+        print("[RSDWTools] rotation mode reset write failed for " .. tostring(state.name or "<target>"))
+    end
+    return true
+end
+
+local function finish_stop(reason)
+    if not state.active then return true, "inactive" end
+    local label = tostring(state.name or "<target>")
+    local actor = state.actor
+    local capture_requested = state.pending_stop_capture == true
+    local overlay_requested = state.pending_stop_overlay == true
+    local writes = tonumber(state.writes) or 0
+    local detail = string.format("applied %s reason=%s writes=%d path=%s",
+        label,
+        tostring(reason or "stop"),
+        writes,
+        tostring(state.last_write_path or "none"))
+    cleanup({ defer_overlay = true })
+    schedule_post_stop(actor, capture_requested, overlay_requested)
+    print("[RSDWTools] rotation mode stop applied: " .. detail)
+    return true, detail
+end
+
+local function apply_pending_stop()
+    if state.pending_stop ~= true then return false, false end
+    local elapsed = os.clock() - (tonumber(state.pending_stop_clock) or 0.0)
+    if elapsed < STOP_SETTLE_SECONDS then
+        return true, false
+    end
+    finish_stop("queued")
+    return true, true
+end
+
 local function tick_rotation()
     if not state.active then return true end
     if not is_valid(state.actor) then
         stop_for_invalid_target()
         return true
     end
+    if apply_pending_reset() then
+        return false
+    end
+    local stop_pending, stop_done = apply_pending_stop()
+    if stop_pending then
+        return stop_done
+    end
+    if (tonumber(state.start_warmup_frames) or 0) > 0 then
+        state.start_warmup_frames = state.start_warmup_frames - 1
+        state.last_dx = 0.0
+        state.last_dy = 0.0
+        state.mouse_source = "warmup"
+        return false
+    end
     local dx, dy, source = read_mouse_delta()
     state.mouse_source = source or state.mouse_source or "unknown"
     if dx ~= nil and dy ~= nil then
-        local changed = apply_rotation_delta(dx, dy)
-        if changed then update_overlay() end
+        apply_rotation_delta(dx, dy)
     end
     return false
 end
@@ -637,7 +755,7 @@ function M.is_active()
     return state.active == true
 end
 
-function M.start()
+local function start_with_actor(actor, source)
     if state.active then
         return true, "already active target=" .. tostring(state.name) .. " mode=" .. tostring(state.mode)
     end
@@ -647,9 +765,12 @@ function M.start()
         return false, "release the grabbed actor before entering Rotation Mode"
     end
 
-    local actor, source = feature_grab.pick_actor_under_reticle()
     if not is_valid(actor) then
         return false, tostring(source or "no actor under reticle")
+    end
+    if type(feature_grab.validate_target_safety) == "function" then
+        local safe_ok, safe_detail = feature_grab.validate_target_safety(actor, "rotate")
+        if not safe_ok then return false, tostring(safe_detail) end
     end
 
     local rot = feature_actor.actor_rotation(actor)
@@ -673,7 +794,6 @@ function M.start()
     state.mouse_source = "none"
     state.camera_last_pitch = nil
     state.camera_last_yaw = nil
-    state.last_help_refresh_clock = 0
     state.writes = 0
     state.actor_write_failures = 0
     state.root_writes = 0
@@ -681,20 +801,78 @@ function M.start()
     state.last_dy = 0.0
     state.last_write_path = "none"
     state.last_mode_hotkey_clock = 0
+    state.last_reset_hotkey_clock = 0
+    state.pending_reset = false
+    state.pending_reset_capture = false
+    state.last_reset_ok = nil
+    state.last_stop_hotkey_clock = 0
+    state.pending_stop = false
+    state.pending_stop_clock = 0
+    state.pending_stop_capture = false
+    state.pending_stop_overlay = false
+    state.last_stop_detail = nil
+    state.start_warmup_frames = START_WARMUP_FRAMES
+    print("[RSDWTools] rotation mode start target=" .. tostring(state.name)
+        .. " source=" .. tostring(state.source)
+        .. string.format(" rot=(p=%.2f,y=%.2f,r=%.2f)",
+            num(state.current_rot.Pitch, 0.0),
+            num(state.current_rot.Yaw, 0.0),
+            num(state.current_rot.Roll, 0.0)))
     update_overlay(true)
     start_loop()
     return true, "target=" .. tostring(state.name) .. " source=" .. tostring(state.source) .. " mode=free"
 end
 
-function M.stop()
+function M.start()
+    local actor, source = feature_grab.pick_actor_under_reticle()
+    return start_with_actor(actor, source)
+end
+
+function M.start_actor(actor, source)
+    return start_with_actor(actor, source or "mode.switch")
+end
+
+function M.current_actor()
+    if state.active ~= true or not is_valid(state.actor) then return nil end
+    return state.actor, state.name, state.source
+end
+
+function M.stop(suppress_capture)
     if not state.active then return true, "inactive" end
-    local label = tostring(state.name or "<target>")
-    local actor = state.actor
-    cleanup()
-    if is_valid(actor) then
-        pcall(function() feature_oculus_transform.capture_actor(actor, "rotation.stop") end)
+    if not is_valid(state.actor) then
+        stop_for_invalid_target()
+        return false, "target lost"
     end
-    return true, "applied " .. label
+    local now = os.clock()
+    local last = tonumber(state.last_stop_hotkey_clock) or 0.0
+    if state.pending_stop == true or (now - last) < STOP_HOTKEY_DEBOUNCE_SECONDS then
+        return true, "stop already queued " .. tostring(state.name)
+    end
+    state.last_stop_hotkey_clock = now
+    state.pending_stop = true
+    state.pending_stop_clock = now
+    state.pending_stop_capture = suppress_capture ~= true
+    state.pending_stop_overlay = suppress_capture ~= true
+    state.last_stop_detail = "queued"
+    state.last_dx = 0.0
+    state.last_dy = 0.0
+    state.mouse_last_x = nil
+    state.mouse_last_y = nil
+    state.camera_last_pitch = nil
+    state.camera_last_yaw = nil
+    print("[RSDWTools] rotation mode stop queued target=" .. tostring(state.name)
+        .. " writes=" .. tostring(state.writes or 0)
+        .. " path=" .. tostring(state.last_write_path or "none"))
+    return true, "stop queued " .. tostring(state.name)
+end
+
+function M.stop_now(reason)
+    if not state.active then return true, "inactive" end
+    state.pending_stop = true
+    state.pending_stop_clock = 0
+    state.pending_stop_capture = true
+    state.pending_stop_overlay = true
+    return finish_stop(reason or "immediate")
 end
 
 function M.toggle()
@@ -707,8 +885,9 @@ function M.mode(args)
     local value, err = parse_mode(args)
     if not value then return false, err end
     state.mode = value
-    mode_hotkey_allows_force_refresh()
-    update_overlay(false)
+    if mode_hotkey_allows_force_refresh() then
+        update_overlay(true, false)
+    end
     return true, "mode=" .. value .. " " .. mode_label(value)
 end
 
@@ -718,18 +897,28 @@ function M.reset()
         stop_for_invalid_target()
         return false, "target lost"
     end
+    local now = os.clock()
+    local last = tonumber(state.last_reset_hotkey_clock) or 0.0
+    if (now - last) < RESET_HOTKEY_DEBOUNCE_SECONDS then
+        return true, "reset already queued " .. tostring(state.name)
+    end
+    state.last_reset_hotkey_clock = now
     state.current_rot = copy_rot(state.original_rot)
-    local ok = set_live_rotation(state.actor, state.current_rot)
-    capture_current("rotation.reset")
-    update_overlay(true)
-    if ok then return true, "reset " .. tostring(state.name) end
-    return false, "reset rotation write failed"
+    state.pending_reset = true
+    state.pending_reset_capture = true
+    state.last_dx = 0.0
+    state.last_dy = 0.0
+    state.mouse_last_x = nil
+    state.mouse_last_y = nil
+    state.camera_last_pitch = nil
+    state.camera_last_yaw = nil
+    return true, "reset queued " .. tostring(state.name)
 end
 
 function M.status()
     if not state.active then return true, "inactive" end
     local rot = state.current_rot or {}
-    return true, string.format("active target=%s mode=%s source=%s mouse=%s driver=%s writes=%d actor_fail=%d root=%d path=%s dx=%.3f dy=%.3f pitch=%.3f yaw=%.3f roll=%.3f",
+    return true, string.format("active target=%s mode=%s source=%s mouse=%s driver=%s writes=%d actor_fail=%d root=%d path=%s reset_pending=%s reset_ok=%s stop_pending=%s dx=%.3f dy=%.3f pitch=%.3f yaw=%.3f roll=%.3f",
         tostring(state.name),
         tostring(state.mode),
         tostring(state.source),
@@ -739,6 +928,9 @@ function M.status()
         tonumber(state.actor_write_failures) or 0,
         tonumber(state.root_writes) or 0,
         tostring(state.last_write_path),
+        tostring(state.pending_reset == true),
+        tostring(state.last_reset_ok),
+        tostring(state.pending_stop == true),
         num(state.last_dx, 0.0),
         num(state.last_dy, 0.0),
         num(rot.Pitch, 0.0),

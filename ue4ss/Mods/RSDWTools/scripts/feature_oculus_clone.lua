@@ -2,7 +2,8 @@
 --
 -- This is intentionally a class-level duplicate: pick the actor under the
 -- freecam reticle, spawn another actor of that same class at the source
--- actor's current transform, then grab the freshly spawned actor for placement.
+-- actor's current transform, then leave the duplicate in place. Building
+-- pieces are handled by feature_oculus_duplicate.lua via build preview.
 
 local M = {}
 
@@ -10,11 +11,34 @@ local feature_actor = require("feature_actor")
 local feature_field = require("feature_field")
 local feature_grab = require("feature_grab")
 local feature_inventory = require("feature_inventory")
-local feature_player_core = require("feature_player_core")
+local feature_oculus_async = require("feature_oculus_async")
+local feature_oculus_input_guard = require("feature_oculus_input_guard")
 local feature_player_spawn = require("feature_player_spawn")
+local feature_umg = require("feature_umg")
+
+local CLONE_SPAWN_DELAY_MS = 50
+local CLONE_RESOLVE_DELAY_MS = 100
+local DEFERRED_TRANSFORM_DELAY_MS = 60
+local DEFERRED_STABILIZE_DELAY_MS = 100
+local CLONE_GRAB_SETTLE_RETRY_MS = 50
+local CLONE_GRAB_SETTLE_TIMEOUT_SECONDS = 3.0
+local pending_clone_token = 0
+local pending_clone = nil
 
 local function is_valid(obj)
     return feature_actor.is_valid_object(obj)
+end
+
+local function toast(message, duration)
+    pcall(function() feature_umg.toast(message, duration or 1.5) end)
+end
+
+local function compact_label(label)
+    local text = tostring(label or "actor")
+    if #text > 72 then
+        text = text:sub(1, 69) .. "..."
+    end
+    return text
 end
 
 local function full_name(obj)
@@ -26,28 +50,24 @@ local function full_name(obj)
     return nil
 end
 
-local function actor_class_path(actor)
+local function actor_class_handle(actor)
     if not is_valid(actor) then return nil, "invalid actor" end
 
     local cls = nil
-    local ok_cls = pcall(function() cls = actor:GetClass() end)
+    local ok_cls, err_cls = pcall(function()
+        cls = actor.GetClass and actor:GetClass() or actor.Class
+    end)
     if not ok_cls or not is_valid(cls) then
-        return nil, "actor class unavailable"
+        return nil, "actor class unavailable: " .. tostring(err_cls)
     end
 
     local full = full_name(cls)
-    if not full then
-        return nil, "actor class full name unavailable"
+    local short
+    if cls.GetName then
+        local ok_name, value = pcall(function() return cls:GetName() end)
+        if ok_name and type(value) == "string" and value ~= "" then short = value end
     end
-
-    local path = full:match("^%S+%s+(.+)$") or full
-    path = tostring(path or ""):match("^%s*(.-)%s*$") or ""
-    path = path:gsub("^'", ""):gsub("'$", "")
-    if path == "" then
-        return nil, "actor class path empty"
-    end
-
-    return feature_player_core.normalize_uclass_path(path), full
+    return cls, full or short or "<unknown class>"
 end
 
 local function object_short_name(obj)
@@ -114,36 +134,6 @@ local function actor_transform(actor)
     }
 end
 
-local function num(v, fallback)
-    local n = tonumber(v)
-    if n == nil or n ~= n or n == math.huge or n == -math.huge then
-        return fallback or 0
-    end
-    return n
-end
-
-local function json_num(v, fallback)
-    return string.format("%.9g", num(v, fallback))
-end
-
-local function spawn_transform_args(class_path, xform)
-    local loc = xform.loc or {}
-    local rot = xform.rot or {}
-    local scale = xform.scale or {}
-    return string.format(
-        '%s {"loc":[%s,%s,%s],"rot":[%s,%s,%s],"scale":[%s,%s,%s]}',
-        tostring(class_path),
-        json_num(loc.X or loc.x, 0),
-        json_num(loc.Y or loc.y, 0),
-        json_num(loc.Z or loc.z, 0),
-        json_num(rot.Pitch or rot.pitch, 0),
-        json_num(rot.Yaw or rot.yaw, 0),
-        json_num(rot.Roll or rot.roll, 0),
-        json_num(scale.X or scale.x, 1),
-        json_num(scale.Y or scale.y, 1),
-        json_num(scale.Z or scale.z, 1))
-end
-
 local function apply_actor_transform(actor, xform)
     if not is_valid(actor) then return false, "spawned actor unavailable" end
     xform = xform or {}
@@ -176,6 +166,262 @@ local function apply_actor_transform(actor, xform)
     return true
 end
 
+local function spawn_loaded_class_actor(class_obj, class_label, xform)
+    if not is_valid(class_obj) then return nil, "invalid actor class" end
+    xform = xform or {}
+    local loc = xform.loc or {}
+    local rot = xform.rot or {}
+
+    local world
+    pcall(function() world = feature_field.resolve_root("world") end)
+    if not is_valid(world) then return nil, "no UWorld" end
+    if not world.SpawnActor then return nil, "UWorld:SpawnActor missing" end
+
+    local spawn_loc = {
+        X = loc.X or loc.x or 0,
+        Y = loc.Y or loc.y or 0,
+        Z = loc.Z or loc.z or 0,
+    }
+    local spawn_rot = {
+        Pitch = rot.Pitch or rot.pitch or 0,
+        Yaw = rot.Yaw or rot.yaw or 0,
+        Roll = rot.Roll or rot.roll or 0,
+    }
+
+    local actor
+    local ok_spawn, spawn_err = pcall(function()
+        actor = world:SpawnActor(class_obj, spawn_loc, spawn_rot)
+    end)
+    if not ok_spawn then
+        return nil, "World:SpawnActor failed: " .. tostring(spawn_err)
+    end
+    if not is_valid(actor) then
+        return nil, "World:SpawnActor returned nil/invalid"
+    end
+
+    pcall(function() actor.bRegisterAsRuntimeSpawned = true end)
+    pcall(function() feature_field.set_last_spawned(actor) end)
+
+    return actor, string.format("loaded-class SpawnActor %s @ (%.1f,%.1f,%.1f)",
+        tostring(class_label or "<class>"),
+        spawn_loc.X or 0,
+        spawn_loc.Y or 0,
+        spawn_loc.Z or 0)
+end
+
+local function schedule_delay(delay_ms, fn)
+    return feature_oculus_async.schedule_game_thread(delay_ms, function()
+        local ok, err = pcall(fn)
+        if not ok then
+            print("[RSDWTools.oculus.clone] deferred step failed: " .. tostring(err))
+        end
+    end)
+end
+
+local function clone_pending_label()
+    if not pending_clone then return nil end
+    return tostring(pending_clone.label or "clone")
+end
+
+local function release_guard_token(token, reason)
+    if token then
+        pcall(function() feature_oculus_input_guard.release(token, reason or "clone") end)
+    end
+end
+
+local function grab_settle_message()
+    if feature_grab.is_modal_active and feature_grab.is_modal_active() then
+        return "grab active or pending"
+    end
+    if type(feature_grab.restart_cooldown_message) == "function" then
+        local ok, msg = pcall(function() return feature_grab.restart_cooldown_message() end)
+        if ok and msg then return tostring(msg) end
+    end
+    return nil
+end
+
+local function after_grab_settled(token, finish, fn)
+    if not pending_clone or pending_clone.token ~= token then return end
+    local settle = grab_settle_message()
+    if settle then
+        local started = tonumber(pending_clone.started_clock) or os.clock()
+        if (os.clock() - started) > CLONE_GRAB_SETTLE_TIMEOUT_SECONDS then
+            finish(false, "timed out waiting for grab to settle: " .. tostring(settle))
+            return
+        end
+        if pending_clone.settle_logged ~= true then
+            pending_clone.settle_logged = true
+            print("[RSDWTools.oculus.clone] waiting for grab settle: " .. tostring(settle))
+        end
+        schedule_delay(CLONE_GRAB_SETTLE_RETRY_MS, function()
+            after_grab_settled(token, finish, fn)
+        end)
+        return
+    end
+    fn()
+end
+
+local function begin_pending_clone(label, guard_token)
+    if pending_clone then
+        return false, "clone already pending for " .. tostring(clone_pending_label())
+    end
+
+    pending_clone_token = pending_clone_token + 1
+    local token = pending_clone_token
+    local final_label = tostring(label or "clone")
+    pending_clone = { token = token, label = final_label, started_clock = os.clock() }
+    local finished = false
+
+    local function finish(ok, detail)
+        if finished then return end
+        finished = true
+        release_guard_token(guard_token, "clone.finish")
+        if pending_clone and pending_clone.token == token then
+            pending_clone = nil
+        end
+        local prefix = ok and "deferred clone ready: " or "deferred clone failed: "
+        print("[RSDWTools.oculus.clone] " .. prefix .. tostring(final_label) .. " ; " .. tostring(detail))
+        if ok then
+            toast("Duplicated: " .. compact_label(final_label), 1.5)
+        else
+            toast("Duplicate failed: " .. compact_label(final_label), 2.0)
+        end
+    end
+
+    return true, token, final_label, finish
+end
+
+local function queue_transform_finish_for_actor(token, actor, source_transform, context, finish, options)
+    if not is_valid(actor) then
+        finish(false, "spawned actor unavailable")
+        return
+    end
+    options = options or {}
+
+    schedule_delay(DEFERRED_TRANSFORM_DELAY_MS, function()
+        if not pending_clone or pending_clone.token ~= token then return end
+        if not is_valid(actor) then
+            finish(false, "spawned actor became invalid before transform copy")
+            return
+        end
+
+        local ok_xform, xform_detail = apply_actor_transform(actor, source_transform)
+        if not ok_xform then
+            finish(false, "transform copy failed: " .. tostring(xform_detail))
+            return
+        end
+
+        if options.stabilize_runtime_item == true then
+            schedule_delay(DEFERRED_STABILIZE_DELAY_MS, function()
+                if not pending_clone or pending_clone.token ~= token then return end
+                if not is_valid(actor) then
+                    finish(false, "spawned item became invalid before stabilize")
+                    return
+                end
+                if type(feature_inventory.stabilize_runtime_world_item_fast) ~= "function" then
+                    finish(true, tostring(context or "clone") .. " transform copied; item stabilize unavailable")
+                    return
+                end
+                local ok_call, ok_stable, stable_result = pcall(function()
+                    return feature_inventory.stabilize_runtime_world_item_fast(actor)
+                end)
+                if not ok_call then
+                    finish(false, "item stabilize raised: " .. tostring(ok_stable))
+                    return
+                end
+                if not ok_stable then
+                    local err = stable_result and stable_result.error or "stabilize failed"
+                    finish(false, "item stabilize failed: " .. tostring(err))
+                    return
+                end
+                local actions = stable_result and stable_result.actions or {}
+                local failures = stable_result and stable_result.failures or {}
+                finish(true, string.format("%s transform copied; item stabilized actions=%d failures=%d",
+                    tostring(context or "clone.item"), #actions, #failures))
+            end)
+            return
+        end
+
+        finish(true, tostring(context or "clone.actor") .. " transform copied; no auto-grab")
+    end)
+end
+
+local function queue_actor_clone_spawn(class_obj, class_label, source_transform, label, source, guard_token)
+    local ok_pending, token_or_detail, final_label, finish = begin_pending_clone(label, guard_token)
+    if not ok_pending then
+        return false, token_or_detail
+    end
+
+    local token = token_or_detail
+    schedule_delay(CLONE_SPAWN_DELAY_MS, function()
+        if not pending_clone or pending_clone.token ~= token then return end
+        after_grab_settled(token, finish, function()
+            if not pending_clone or pending_clone.token ~= token then return end
+            local actor, spawn_detail = spawn_loaded_class_actor(class_obj, class_label, source_transform)
+            if not is_valid(actor) then
+                finish(false, string.format("loaded-class spawn failed for %s (%s): %s",
+                    tostring(final_label), tostring(class_label), tostring(spawn_detail)))
+                return
+            end
+
+            schedule_delay(CLONE_RESOLVE_DELAY_MS, function()
+                if not pending_clone or pending_clone.token ~= token then return end
+                if not is_valid(actor) then
+                    finish(false, string.format("spawned %s from %s, but actor was invalid after settle",
+                        tostring(class_label), tostring(final_label)))
+                    return
+                end
+                queue_transform_finish_for_actor(token, actor, source_transform, "clone.actor", function(ok, detail)
+                    finish(ok, string.format("%s [%s]; %s", tostring(spawn_detail), tostring(source or "trace"), tostring(detail)))
+                end)
+            end)
+        end)
+    end)
+
+    return true, string.format("queued deferred clone spawn+copy for %s over ~%dms",
+        final_label, CLONE_SPAWN_DELAY_MS + CLONE_RESOLVE_DELAY_MS + DEFERRED_TRANSFORM_DELAY_MS)
+end
+
+local function queue_item_clone_spawn(item_name, item_path, source_transform, label, guard_token)
+    local ok_pending, token_or_detail, final_label, finish = begin_pending_clone(label or item_name, guard_token)
+    if not ok_pending then
+        return false, token_or_detail
+    end
+
+    local token = token_or_detail
+    schedule_delay(CLONE_SPAWN_DELAY_MS, function()
+        if not pending_clone or pending_clone.token ~= token then return end
+        after_grab_settled(token, finish, function()
+            if not pending_clone or pending_clone.token ~= token then return end
+            local ok_give, give_detail = feature_inventory.give(tostring(item_name) .. " 1")
+            if not ok_give and item_path and item_path ~= "" then
+                ok_give, give_detail = feature_player_spawn.spawn_item(tostring(item_path) .. " 1")
+            end
+            if not ok_give then
+                finish(false, string.format("item duplicate failed for %s: %s", tostring(item_name), tostring(give_detail)))
+                return
+            end
+
+            schedule_delay(CLONE_RESOLVE_DELAY_MS, function()
+                if not pending_clone or pending_clone.token ~= token then return end
+                local actor
+                pcall(function() actor = feature_field.resolve_root("lastspawned") end)
+                if not is_valid(actor) then
+                    finish(false, string.format("duplicated item %s, but lastspawned was not resolvable after settle",
+                        tostring(item_name)))
+                    return
+                end
+                queue_transform_finish_for_actor(token, actor, source_transform, "clone.item", function(ok, detail)
+                    finish(ok, tostring(give_detail) .. "; " .. tostring(detail))
+                end, { stabilize_runtime_item = true })
+            end)
+        end)
+    end)
+
+    return true, string.format("queued deferred item clone+copy for %s over ~%dms",
+        final_label, CLONE_SPAWN_DELAY_MS + CLONE_RESOLVE_DELAY_MS + DEFERRED_TRANSFORM_DELAY_MS + DEFERRED_STABILIZE_DELAY_MS)
+end
+
 local function oculus_pawn()
     local ok, obj = pcall(function()
         return feature_field.resolve_root("pawn.OculusComponent.OculusPawn")
@@ -196,7 +442,7 @@ local function refused_self(actor)
     return nil
 end
 
-local function clone_runtime_world_item(actor, source)
+local function clone_runtime_world_item(actor, source, guard_token)
     local item_data, item_source = read_world_item_data(actor)
     if not is_valid(item_data) then
         return false, "runtime world item has no readable ItemData"
@@ -209,36 +455,20 @@ local function clone_runtime_world_item(actor, source)
     end
 
     local source_transform = actor_transform(actor)
-    local ok_give, give_detail = feature_inventory.give(item_name .. " 1")
-    if not ok_give and item_path and item_path ~= "" then
-        ok_give, give_detail = feature_player_spawn.spawn_item(item_path .. " 1")
-    end
-    if not ok_give then
-        return false, string.format("item duplicate failed for %s: %s", tostring(item_name), tostring(give_detail))
-    end
-
-    local spawned_actor
-    pcall(function() spawned_actor = feature_field.resolve_root("lastspawned") end)
-    if not is_valid(spawned_actor) then
-        return false, string.format("duplicated item %s, but lastspawned was not resolvable", tostring(item_name))
-    end
-
-    local ok_xform, xform_detail = apply_actor_transform(spawned_actor, source_transform)
-    if not ok_xform then
-        return false, string.format("duplicated item %s, but transform copy failed: %s",
-            tostring(item_name), tostring(xform_detail))
-    end
-
-    local ok_grab, grab_detail = feature_grab.start_lastspawned_preserving_transform(
-        source_transform.rot,
-        source_transform.scale)
-    if not ok_grab then
-        return false, string.format("duplicated item %s, but grab failed: %s", tostring(item_name), tostring(grab_detail))
-    end
-
     local short = feature_actor.short_name_of(actor) or "<unnamed item>"
+    local ok_queue, queue_detail = queue_item_clone_spawn(
+        item_name,
+        item_path,
+        source_transform,
+        tostring(item_name),
+        guard_token)
+    if not ok_queue then
+        return false, string.format("queued item duplicate %s, but deferred spawn failed: %s",
+            tostring(item_name), tostring(queue_detail))
+    end
+
     return true, string.format(
-        "duplicated item %s from %s [%s via %s]; copied loc=(%.1f,%.1f,%.1f) rot=(%.1f,%.1f,%.1f) scale=(%.3f,%.3f,%.3f); %s; %s",
+        "queued item duplicate %s from %s [%s via %s]; copied loc=(%.1f,%.1f,%.1f) rot=(%.1f,%.1f,%.1f) scale=(%.3f,%.3f,%.3f); %s",
         tostring(item_name),
         tostring(short),
         tostring(source or "trace"),
@@ -252,13 +482,18 @@ local function clone_runtime_world_item(actor, source)
         source_transform.scale.X or 1,
         source_transform.scale.Y or 1,
         source_transform.scale.Z or 1,
-        tostring(give_detail),
-        tostring(grab_detail))
+        tostring(queue_detail))
 end
 
 function M.clone()
+    if feature_grab.is_modal_active and feature_grab.is_modal_active() then
+        return false, "release the current grabbed actor first"
+    end
     if feature_grab.is_active and feature_grab.is_active() then
         return false, "release the current grabbed actor first"
+    end
+    if pending_clone then
+        return false, "clone already pending for " .. tostring(clone_pending_label())
     end
 
     local actor, source = feature_grab.pick_actor_under_reticle()
@@ -269,33 +504,43 @@ function M.clone()
     local self_err = refused_self(actor)
     if self_err then return false, self_err end
 
-    if is_runtime_world_item(actor) then
-        return clone_runtime_world_item(actor, source)
+    local guard_token = feature_oculus_input_guard.acquire("clone")
+    local guard_transferred = false
+    local function fail(detail)
+        if not guard_transferred then release_guard_token(guard_token, "clone.fail") end
+        return false, detail
     end
 
-    local class_path, class_full = actor_class_path(actor)
-    if not class_path then return false, tostring(class_full) end
+    if is_runtime_world_item(actor) then
+        local ok_item, item_detail = clone_runtime_world_item(actor, source, guard_token)
+        if ok_item then
+            guard_transferred = true
+            return ok_item, item_detail
+        end
+        return fail(item_detail)
+    end
+
+    local class_obj, class_label = actor_class_handle(actor)
+    if not class_obj then return fail(tostring(class_label)) end
 
     local source_transform = actor_transform(actor)
     local short = feature_actor.short_name_of(actor) or "<unnamed>"
-    local spawn_args = spawn_transform_args(class_path, source_transform)
-    local ok_spawn, spawn_detail = feature_player_spawn.spawn_transform(spawn_args)
-    if not ok_spawn then
-        return false, string.format("spawn.transform failed for %s (%s): %s",
-            tostring(short), tostring(class_path), tostring(spawn_detail))
+    local ok_queue, queue_detail = queue_actor_clone_spawn(
+        class_obj,
+        class_label,
+        source_transform,
+        short,
+        source,
+        guard_token)
+    if not ok_queue then
+        return fail(string.format("queued spawn %s from %s, but deferred clone failed: %s",
+            tostring(class_label), tostring(short), tostring(queue_detail)))
     end
-
-    local ok_grab, grab_detail = feature_grab.start_lastspawned_preserving_transform(
-        source_transform.rot,
-        source_transform.scale)
-    if not ok_grab then
-        return false, string.format("spawned %s from %s, but grab failed: %s",
-            tostring(class_path), tostring(short), tostring(grab_detail))
-    end
+    guard_transferred = true
 
     return true, string.format(
-        "cloned %s via %s [%s]; copied loc=(%.1f,%.1f,%.1f) rot=(%.1f,%.1f,%.1f) scale=(%.3f,%.3f,%.3f); %s",
-        tostring(short), tostring(class_path), tostring(source or "trace"),
+        "queued clone %s via loaded-class %s [%s]; copied loc=(%.1f,%.1f,%.1f) rot=(%.1f,%.1f,%.1f) scale=(%.3f,%.3f,%.3f); %s",
+        tostring(short), tostring(class_label), tostring(source or "trace"),
         source_transform.loc.X or 0,
         source_transform.loc.Y or 0,
         source_transform.loc.Z or 0,
@@ -305,7 +550,7 @@ function M.clone()
         source_transform.scale.X or 1,
         source_transform.scale.Y or 1,
         source_transform.scale.Z or 1,
-        tostring(grab_detail))
+        tostring(queue_detail))
 end
 
 return M

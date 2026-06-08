@@ -8,21 +8,25 @@ local mod_paths = require("mod_paths")
 local feature_umg = require("feature_umg")
 local feature_oculus = require("feature_oculus")
 local feature_grab = require("feature_grab")
+local feature_oculus_input_guard = require("feature_oculus_input_guard")
 local feature_oculus_rotation = require("feature_oculus_rotation")
 local feature_oculus_scale = require("feature_oculus_scale")
 
 local M = {}
 
-local HELP_REFRESH_MS = 1000
+local DEFERRED_HELP_REFRESH_MS = 300
+local ACTIVE_WATCHDOG_MS = 1000
 local oculus_command_state = {}
-local help_loop_started = false
-local help_loop_generation = 0
 local hotkey_help_enabled = true
 local last_help_text = nil
 local last_help_mode_text = nil
-local last_help_mode = "inactive"
+local last_gate_mode = "inactive"
+local last_rendered_help_mode = "inactive"
 local exit_dispatch = nil
 local exit_armed = false
+local active_watchdog_started = false
+local active_watchdog_generation = 0
+local active_watchdog_tick_pending = false
 
 local function json_skip_ws(s, i)
     while i <= #s do
@@ -220,24 +224,32 @@ local function remember_exit_dispatch(dispatch)
     if type(dispatch) == "function" then exit_dispatch = dispatch end
 end
 
-local function current_help_mode()
+local function refresh_gate_mode()
     local active_ok = feature_oculus.require_state("active")
-    if not active_ok then last_help_mode = "inactive"; return last_help_mode end
+    if not active_ok then last_gate_mode = "inactive"; return last_gate_mode end
     exit_armed = true
     if feature_oculus_rotation.is_active and feature_oculus_rotation.is_active() then
-        last_help_mode = "rotation"
-        return last_help_mode
+        last_gate_mode = "rotation"
+        return last_gate_mode
     end
     if feature_oculus_scale.is_active and feature_oculus_scale.is_active() then
-        last_help_mode = "scale"
-        return last_help_mode
+        last_gate_mode = "scale"
+        return last_gate_mode
+    end
+    if feature_grab.is_modal_active and feature_grab.is_modal_active() then
+        last_gate_mode = "grab"
+        return last_gate_mode
     end
     local repair_ok = feature_oculus.require_state("repair")
-    if repair_ok then last_help_mode = "repair"; return last_help_mode end
+    if repair_ok then last_gate_mode = "repair"; return last_gate_mode end
     local preview_ok = feature_oculus.require_state("preview")
-    if preview_ok then last_help_mode = "preview"; return last_help_mode end
-    last_help_mode = "active"
-    return last_help_mode
+    if preview_ok then last_gate_mode = "preview"; return last_gate_mode end
+    last_gate_mode = "active"
+    return last_gate_mode
+end
+
+local function current_help_mode()
+    return refresh_gate_mode()
 end
 
 local function section_help_bucket(section)
@@ -245,6 +257,7 @@ local function section_help_bucket(section)
     local name = lower(section.name)
     if gate == "rotation" or name == "rotation" or name == "rotation mode" then return "rotation" end
     if gate == "scale" or name == "scale" or name == "scale mode" then return "scale" end
+    if gate == "grab" or name == "grab" or name == "grab mode" then return "grab" end
     if gate == "repair" or name == "repair" then return "repair" end
     if gate == "preview" or name == "build" or name == "build preview" or name == "preview" then return "preview" end
     if gate == "active" or name == "active" then return "active" end
@@ -253,7 +266,7 @@ end
 
 local function section_in_help(section, mode)
     local bucket = section_help_bucket(section)
-    if bucket == "active" then return mode == "active" or mode == "preview" or mode == "repair" or mode == "rotation" or mode == "scale" end
+    if bucket == "active" then return mode == "active" or mode == "preview" or mode == "repair" or mode == "rotation" or mode == "scale" or mode == "grab" end
     return bucket ~= nil and bucket == mode
 end
 
@@ -319,6 +332,7 @@ end
 local function mode_help_label(mode)
     if mode == "rotation" then return "Rotation Mode" end
     if mode == "scale" then return "Scale Mode" end
+    if mode == "grab" then return "Grab Mode" end
     if mode == "repair" then return "Actor Mode" end
     if mode == "preview" then return "Build Mode" end
     return "Oculus Mode"
@@ -481,9 +495,9 @@ local function wheel_pair_help_item(command, state_key)
     return compact(name, 30) .. " (" .. label .. ")"
 end
 
-local function set_help_text(text, mode_text)
+local function set_help_text(text, mode_text, force)
     mode_text = mode_text or ""
-    if text == last_help_text and mode_text == last_help_mode_text then return end
+    if force ~= true and text == last_help_text and mode_text == last_help_mode_text then return end
     last_help_text = text
     last_help_mode_text = mode_text
     feature_umg.oculus_help(text, mode_text)
@@ -492,30 +506,143 @@ end
 local function hide_help_widget()
     last_help_text = nil
     last_help_mode_text = nil
+    last_rendered_help_mode = "inactive"
     feature_umg.oculus_help_hide()
+end
+
+local function stop_modal_modes_for_inactive(reason)
+    if feature_oculus_rotation.is_active and feature_oculus_rotation.is_active() then
+        if feature_oculus_rotation.stop_now then
+            pcall(function() feature_oculus_rotation.stop_now(reason or "oculus.inactive") end)
+        else
+            pcall(function() feature_oculus_rotation.stop() end)
+        end
+    end
+    if feature_oculus_scale.is_active and feature_oculus_scale.is_active() then
+        if feature_oculus_scale.stop_now then
+            pcall(function() feature_oculus_scale.stop_now(reason or "oculus.inactive") end)
+        else
+            pcall(function() feature_oculus_scale.stop() end)
+        end
+    end
+    if feature_grab.safe_cancel then
+        pcall(function() feature_grab.safe_cancel() end)
+    end
+    if feature_oculus_input_guard.release_all then
+        pcall(function() feature_oculus_input_guard.release_all(reason or "oculus.inactive") end)
+    end
+end
+
+local function hide_oculus_overlays()
+    hide_help_widget()
+    pcall(function() feature_umg.oculus_rotation_overlay(false) end)
+end
+
+local function stop_active_watchdog()
+    active_watchdog_generation = active_watchdog_generation + 1
+    active_watchdog_started = false
+    active_watchdog_tick_pending = false
+end
+
+local function handle_inactive_watchdog()
+    print("[RSDWTools.oculus] active watchdog detected inactive Oculus; tearing down overlays.")
+    stop_modal_modes_for_inactive("oculus.inactive.watchdog")
+    if type(exit_dispatch) == "function" then
+        pcall(function() M.run_exit(exit_dispatch, false) end)
+    else
+        exit_armed = false
+    end
+    last_gate_mode = "inactive"
+    hide_oculus_overlays()
+end
+
+local function ensure_active_watchdog()
+    if active_watchdog_started then return true, "active watchdog running" end
+    if not LoopAsync then return true, "active watchdog skipped: LoopAsync unavailable" end
+    active_watchdog_generation = active_watchdog_generation + 1
+    local my_generation = active_watchdog_generation
+    active_watchdog_started = true
+    LoopAsync(ACTIVE_WATCHDOG_MS, function()
+        if my_generation ~= active_watchdog_generation then return true end
+        if active_watchdog_tick_pending then return false end
+
+        active_watchdog_tick_pending = true
+        local function run_watchdog_tick()
+            active_watchdog_tick_pending = false
+            if my_generation ~= active_watchdog_generation then return end
+
+            if not exit_armed and last_gate_mode == "inactive" then
+                stop_active_watchdog()
+                return
+            end
+
+            local active_ok = feature_oculus.require_state("active")
+            if not active_ok then
+                handle_inactive_watchdog()
+                stop_active_watchdog()
+                return
+            end
+
+            local mode = refresh_gate_mode()
+            if hotkey_help_enabled and mode ~= last_rendered_help_mode then
+                local ok_refresh, refresh_err = pcall(function() M.refresh_hotkey_help(true) end)
+                if not ok_refresh then
+                    print("[RSDWTools.oculus] active watchdog help refresh failed: " .. tostring(refresh_err))
+                end
+            end
+        end
+
+        if ExecuteInGameThread then
+            ExecuteInGameThread(function()
+                local ok_tick, tick_err = pcall(run_watchdog_tick)
+                if not ok_tick then
+                    active_watchdog_tick_pending = false
+                    print("[RSDWTools.oculus] active watchdog tick failed: " .. tostring(tick_err))
+                end
+            end)
+        else
+            local ok_tick, tick_err = pcall(run_watchdog_tick)
+            if not ok_tick then
+                active_watchdog_tick_pending = false
+                print("[RSDWTools.oculus] active watchdog tick failed: " .. tostring(tick_err))
+            end
+        end
+        return false
+    end)
+    return true, "active watchdog started"
 end
 
 function M.reset_command_states()
     oculus_command_state = {}
     last_help_text = nil
     last_help_mode_text = nil
-    last_help_mode = "inactive"
+    last_gate_mode = "inactive"
+    last_rendered_help_mode = "inactive"
     exit_armed = false
+    stop_active_watchdog()
 end
 
 function M.can_attempt_cached_gate(gate)
     local gate_name = lower(gate)
     if gate_name == "" or gate_name == "init" then gate_name = "active" end
     if gate_name == "inactive" then return true end
+    local mode = refresh_gate_mode()
     if gate_name == "rotation" then
         return feature_oculus_rotation.is_active and feature_oculus_rotation.is_active() == true
     end
     if gate_name == "scale" then
         return feature_oculus_scale.is_active and feature_oculus_scale.is_active() == true
     end
-    if last_help_mode == "inactive" then return false end
+    if gate_name == "grab" then
+        return feature_grab.is_modal_active and feature_grab.is_modal_active() == true
+    end
+    if mode == "inactive" then return false end
     if gate_name == "active" then return true end
-    return last_help_mode == gate_name
+    return mode == gate_name
+end
+
+function M.cached_gate_mode()
+    return last_gate_mode or "inactive"
 end
 
 function M.next_command_lines(state_key, command)
@@ -585,10 +712,15 @@ end
 local function help_items_for_bucket(doc, bucket)
     local items = {}
     for section_index, section in ipairs(doc.sections or {}) do
-        if section_help_bucket(section) == bucket then
+        local section_bucket = section_help_bucket(section)
+        if section_bucket == bucket or bucket == "grab" then
             local paired = {}
             for command_index, command in ipairs(section.commands or {}) do
-                if not paired[command_index] then
+                local include_command = section_bucket == bucket
+                if bucket == "grab" and not include_command then
+                    include_command = grab_only_help_command(command) or command_tracks_grab_state(command)
+                end
+                if include_command and not paired[command_index] then
                     local label = command_hotkey_label(command)
                     local verb = command_primary_verb(command)
                     if label ~= "" and verb ~= "camera.oculus.status" and command_help_visible(command) then
@@ -638,6 +770,11 @@ local function help_block(label, items)
     return table.concat(lines, "\n")
 end
 
+local function append_detail_line(lines, detail)
+    local text = trim_text(detail)
+    if text ~= "" then lines[#lines + 1] = text end
+end
+
 function M.hotkey_help_text(mode)
     mode = mode or current_help_mode()
     if mode == "inactive" then return nil, "help hidden: inactive" end
@@ -649,18 +786,27 @@ function M.hotkey_help_text(mode)
     local primary = help_line(mode_help_label("active"), active_items)
     local secondary = ""
     local mode_items_count = 0
-    if mode == "preview" or mode == "repair" or mode == "rotation" or mode == "scale" then
+    if mode == "preview" or mode == "repair" or mode == "rotation" or mode == "scale" or mode == "grab" then
         local mode_items = help_items_for_bucket(doc, mode)
         mode_items_count = #mode_items
         local mode_label = mode_help_label(mode)
         if mode == "rotation" and feature_oculus_rotation.help_details then
-            local lines = { feature_oculus_rotation.help_details() }
+            local lines = {}
+            append_detail_line(lines, feature_oculus_rotation.help_details())
             for _, item in ipairs(mode_items) do
                 lines[#lines + 1] = item
             end
             secondary = table.concat(lines, "\n")
         elseif mode == "scale" and feature_oculus_scale.help_details then
-            local lines = { feature_oculus_scale.help_details() }
+            local lines = {}
+            append_detail_line(lines, feature_oculus_scale.help_details())
+            for _, item in ipairs(mode_items) do
+                lines[#lines + 1] = item
+            end
+            secondary = table.concat(lines, "\n")
+        elseif mode == "grab" and feature_grab.help_details then
+            local lines = {}
+            append_detail_line(lines, feature_grab.help_details())
             for _, item in ipairs(mode_items) do
                 lines[#lines + 1] = item
             end
@@ -675,7 +821,7 @@ function M.hotkey_help_text(mode)
         secondary
 end
 
-function M.refresh_hotkey_help()
+function M.refresh_hotkey_help(force)
     local mode = current_help_mode()
     if mode == "inactive" then
         hide_help_widget()
@@ -687,37 +833,47 @@ function M.refresh_hotkey_help()
     end
     local text, detail, mode_text = M.hotkey_help_text(mode)
     if not text then return true, detail end
-    set_help_text(text, mode_text)
+    set_help_text(text, mode_text, force == true)
+    last_rendered_help_mode = mode
     return true, detail
 end
 
 function M.start_hotkey_help_loop(dispatch)
     remember_exit_dispatch(dispatch)
-    if help_loop_started then return true, "help loop running" end
-    if not LoopAsync then return true, "help loop skipped: LoopAsync unavailable" end
-    if current_help_mode() == "inactive" then return true, "help loop skipped: inactive" end
+    refresh_gate_mode()
+    local _, watchdog_detail = ensure_active_watchdog()
+    return true, "help event-driven; " .. tostring(watchdog_detail)
+end
 
-    help_loop_generation = help_loop_generation + 1
-    local my_generation = help_loop_generation
-    help_loop_started = true
-    LoopAsync(HELP_REFRESH_MS, function()
-        if my_generation ~= help_loop_generation then return true end
-        if current_help_mode() == "inactive" then
-            M.run_exit(exit_dispatch, false)
-            M.hide_hotkey_help()
-            return true
+function M.schedule_deferred_help_refresh(delay_ms)
+    if not LoopAsync then return true, "deferred help skipped: LoopAsync unavailable" end
+    local ms = tonumber(delay_ms) or DEFERRED_HELP_REFRESH_MS
+    if ms < 1 then ms = 1 end
+    LoopAsync(math.floor(ms + 0.5), function()
+        if ExecuteInGameThread then
+            ExecuteInGameThread(function()
+                pcall(function() M.refresh_hotkey_help() end)
+            end)
+        else
+            pcall(function() M.refresh_hotkey_help() end)
         end
-        M.refresh_hotkey_help()
-        return false
+        return true
     end)
-    return true, "help loop started"
+    return true, "deferred help refresh " .. tostring(math.floor(ms + 0.5)) .. "ms"
 end
 
 function M.show_hotkey_help(dispatch)
     remember_exit_dispatch(dispatch)
-    local _, refresh_detail = M.refresh_hotkey_help()
+    local _, refresh_detail = M.refresh_hotkey_help(true)
     local _, loop_detail = M.start_hotkey_help_loop(dispatch)
-    return true, tostring(refresh_detail) .. "; " .. tostring(loop_detail)
+    local _, deferred_detail = M.schedule_deferred_help_refresh()
+    local _, deferred_late_detail = M.schedule_deferred_help_refresh(DEFERRED_HELP_REFRESH_MS * 3)
+    local _, deferred_settle_detail = M.schedule_deferred_help_refresh(DEFERRED_HELP_REFRESH_MS * 6)
+    return true, tostring(refresh_detail)
+        .. "; " .. tostring(loop_detail)
+        .. "; " .. tostring(deferred_detail)
+        .. "; " .. tostring(deferred_late_detail)
+        .. "; " .. tostring(deferred_settle_detail)
 end
 
 function M.set_hotkey_help_visibility(args_text)
@@ -733,15 +889,13 @@ function M.set_hotkey_help_visibility(args_text)
     end
 
     local _, refresh_detail = M.refresh_hotkey_help()
-    local _, loop_detail = M.start_hotkey_help_loop()
-    return true, tostring(refresh_detail) .. "; " .. tostring(loop_detail)
+    return true, tostring(refresh_detail) .. "; help event-driven"
 end
 
 function M.hide_hotkey_help()
-    help_loop_generation = help_loop_generation + 1
-    help_loop_started = false
-    last_help_mode = "inactive"
-    hide_help_widget()
+    stop_active_watchdog()
+    last_gate_mode = "inactive"
+    hide_oculus_overlays()
     return true, "help hidden"
 end
 

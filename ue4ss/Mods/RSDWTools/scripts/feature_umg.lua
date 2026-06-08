@@ -27,6 +27,7 @@ local oculus_rotation_top_text = nil
 local oculus_rotation_mode_border = nil
 local oculus_rotation_mode_text = nil
 local toast_generation = 0           -- bumped on every show ; auto-hide checks it
+local oculus_rotation_generation = 0 -- bumped on every modal overlay update
 local Visibility_HIDDEN = 2
 local Visibility_SELF_HIT_TEST_INVISIBLE = 4
 
@@ -40,6 +41,45 @@ end
 
 local function FSlateColor(r, g, b, a)
     return { SpecifiedColor = FLinearColor(r, g, b, a), ColorUseRule = 0 }
+end
+
+local function oculus_overlay_palette(kind)
+    local mode = tostring(kind or "scale"):lower()
+    if mode == "grab" then
+        return {
+            top_bg = FLinearColor(0.0, 0.08, 0.03, 0.70),
+            mode_bg = FLinearColor(0.0, 0.07, 0.03, 0.66),
+            text = FSlateColor(0.56, 1.0, 0.70, 1.0),
+        }
+    end
+    if mode == "rotation" then
+        return {
+            top_bg = FLinearColor(0.0, 0.035, 0.10, 0.70),
+            mode_bg = FLinearColor(0.0, 0.03, 0.09, 0.66),
+            text = FSlateColor(0.58, 0.82, 1.0, 1.0),
+        }
+    end
+    return {
+        top_bg = FLinearColor(0.04, 0.02, 0.0, 0.70),
+        mode_bg = FLinearColor(0.04, 0.02, 0.0, 0.66),
+        text = FSlateColor(1.0, 0.88, 0.55, 1.0),
+    }
+end
+
+local function apply_oculus_rotation_palette(kind)
+    local palette = oculus_overlay_palette(kind)
+    if is_valid(oculus_rotation_top_border) then
+        oculus_rotation_top_border:SetBrushColor(palette.top_bg)
+    end
+    if is_valid(oculus_rotation_mode_border) then
+        oculus_rotation_mode_border:SetBrushColor(palette.mode_bg)
+    end
+    if is_valid(oculus_rotation_top_text) then
+        oculus_rotation_top_text:SetColorAndOpacity(palette.text)
+    end
+    if is_valid(oculus_rotation_mode_text) then
+        oculus_rotation_mode_text:SetColorAndOpacity(palette.text)
+    end
 end
 
 local function set_visibility(show)
@@ -397,12 +437,15 @@ function M.oculus_help_hide()
     M.oculus_help("")
 end
 
-function M.oculus_rotation_overlay(show, top_message, mode_message)
+function M.oculus_rotation_overlay(show, top_message, mode_message, palette)
     if not ExecuteInGameThread then
         print("[RSDWTools.umg] ExecuteInGameThread unavailable.")
         return
     end
+    oculus_rotation_generation = oculus_rotation_generation + 1
+    local my_gen = oculus_rotation_generation
     ExecuteInGameThread(function()
+        if my_gen ~= oculus_rotation_generation then return end
         if show ~= true then
             set_oculus_rotation_visibility(false, false)
             return
@@ -410,6 +453,7 @@ function M.oculus_rotation_overlay(show, top_message, mode_message)
         if not is_valid(oculus_rotation_top_text) then
             if not create_oculus_rotation_widget() then return end
         end
+        apply_oculus_rotation_palette(palette)
         if is_valid(oculus_rotation_top_text) then
             oculus_rotation_top_text:SetText(FText(tostring(top_message or "")))
         end

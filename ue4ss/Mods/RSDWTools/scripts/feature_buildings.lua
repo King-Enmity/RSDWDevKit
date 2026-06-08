@@ -993,6 +993,8 @@ local function field_bool(obj_body, key)
     return nil
 end
 
+local class_path_from_full
+
 local function parse_pieces(body)
     local arr, err = extract_named_array(body, "pieces", true)
     if not arr then return nil, err end
@@ -1048,6 +1050,41 @@ local function parse_items(body)
             scale_x         = field_num(o, "scale_x"),
             scale_y         = field_num(o, "scale_y"),
             scale_z         = field_num(o, "scale_z"),
+        }
+    end
+    return out
+end
+
+local function parse_actors(body)
+    local arr, err = extract_named_array(body, "actors", false)
+    if not arr then
+        if err then return nil, err end
+        return {}
+    end
+    local objs = split_objects(arr)
+    local out = {}
+    for i = 1, #objs do
+        local o = objs[i]
+        local class_path = field_str(o, "class_path")
+            or field_str(o, "path")
+            or field_str(o, "bp")
+            or field_str(o, "class")
+        if not class_path then
+            class_path = class_path_from_full(field_str(o, "actor_class"))
+        end
+        out[#out + 1] = {
+            actor_name  = field_str(o, "actor_name"),
+            actor_class = field_str(o, "actor_class"),
+            class_path  = class_path,
+            x           = field_num(o, "x"),
+            y           = field_num(o, "y"),
+            z           = field_num(o, "z"),
+            pitch       = field_num(o, "pitch"),
+            yaw         = field_num(o, "yaw"),
+            roll        = field_num(o, "roll"),
+            scale_x     = field_num(o, "scale_x"),
+            scale_y     = field_num(o, "scale_y"),
+            scale_z     = field_num(o, "scale_z"),
         }
     end
     return out
@@ -1112,7 +1149,7 @@ local function normalize_count(v)
     return math.floor(n)
 end
 
-local function class_path_from_full(full)
+function class_path_from_full(full)
     if type(full) ~= "string" or full == "" then return nil end
     local path = full:match("^%S+%s+(.+)$") or full
     path = tostring(path or ""):match("^%s*(.-)%s*$") or ""
@@ -1259,6 +1296,75 @@ local function replay_items_relative(items, origin, anchor_loc, theta_deg)
     return counts
 end
 
+local function spawn_transform_args(class_path, rec)
+    local cp = class_path_from_full(class_path)
+    if not cp or cp == "" then return nil, "missing class_path" end
+    if type(rec.x) ~= "number" or type(rec.y) ~= "number" or type(rec.z) ~= "number" then
+        return nil, "actor missing x/y/z"
+    end
+    return string.format(
+        '%s {"loc":[%s,%s,%s],"rot":[%s,%s,%s],"scale":[%s,%s,%s]}',
+        cp,
+        json_num(rec.x), json_num(rec.y), json_num(rec.z),
+        json_num(rec.pitch or 0), json_num(rec.yaw or 0), json_num(rec.roll or 0),
+        json_num(rec.scale_x or 1), json_num(rec.scale_y or 1), json_num(rec.scale_z or 1)
+    ), nil
+end
+
+local function spawn_actor_record(rec)
+    if type(rec) ~= "table" then return false, "bad actor record" end
+    local class_path = rec.class_path or class_path_from_full(rec.actor_class)
+    local args, arg_err = spawn_transform_args(class_path, rec)
+    if not args then return false, arg_err end
+    local ok, detail = feature_player_spawn.spawn_transform(args)
+    if not ok then return false, detail end
+    return true, detail
+end
+
+local function replay_actors_absolute(actors)
+    if type(actors) ~= "table" or #actors == 0 then
+        return { sent = 0, failed = 0, skipped = 0 }
+    end
+    local counts = { sent = 0, failed = 0, skipped = 0 }
+    for i = 1, #actors do
+        local rec = actors[i]
+        local ok, detail = spawn_actor_record(rec)
+        if ok then
+            counts.sent = counts.sent + 1
+            print(string.format("[RSDWTools] buildings.import: actor[%d] spawned %s at (%.1f, %.1f, %.1f) ; %s",
+                i, tostring(rec.class_path or rec.actor_class), rec.x or 0, rec.y or 0, rec.z or 0,
+                tostring(detail or "")))
+        else
+            counts.failed = counts.failed + 1
+            print(string.format("[RSDWTools] buildings.import: actor[%d] failed (%s)",
+                i, tostring(detail)))
+        end
+    end
+    return counts
+end
+
+local function replay_actors_relative(actors, origin, anchor_loc, theta_deg)
+    if type(actors) ~= "table" or #actors == 0 then
+        return { sent = 0, failed = 0, skipped = 0 }
+    end
+    local transformed = {}
+    local counts = { sent = 0, failed = 0, skipped = 0 }
+    for i = 1, #actors do
+        local rec = rotate_record_relative(actors[i], origin, anchor_loc, theta_deg)
+        if rec then
+            transformed[#transformed + 1] = rec
+        else
+            counts.skipped = counts.skipped + 1
+            print(string.format("[RSDWTools] buildings.import: actor[%d] skipped (bad relative transform)", i))
+        end
+    end
+    local spawned = replay_actors_absolute(transformed)
+    counts.sent = counts.sent + spawned.sent
+    counts.failed = counts.failed + spawned.failed
+    counts.skipped = counts.skipped + spawned.skipped
+    return counts
+end
+
 -- ---------------------------------------------------------------------------
 -- world.buildings.import <name> [ghost]
 -- Reads ipc/buildings_<name>.json and replays each piece via
@@ -1289,30 +1395,38 @@ function M.import(args_str)
     end
     local pieces, perr = parse_pieces(body)
     if not pieces then
-        return false, "JSON parse: " .. tostring(perr)
-    end
-    if #pieces == 0 then
-        return false, "no pieces in JSON"
+        if tostring(perr or ""):find("no pieces array", 1, true) then
+            pieces = {}
+        else
+            return false, "JSON parse: " .. tostring(perr)
+        end
     end
     local items, ierr = parse_items(body)
     if not items then
         return false, "JSON parse items: " .. tostring(ierr)
     end
-
-    local _pc, bmc, err = get_local_pc_and_bmc()
-    if not bmc then
-        return false, "build mode unavailable: " .. tostring(err)
+    local actors, aerr = parse_actors(body)
+    if not actors then
+        return false, "JSON parse actors: " .. tostring(aerr)
     end
-    if type(bmc.Server_SpawnBuilding) ~= "function" and not bmc.Server_SpawnBuilding then
-        -- UE4SS exposes UFunctions as callable members -- the truthy
-        -- check via direct index is the reliable test.
-        return false, "BuildModeComponent has no Server_SpawnBuilding"
+    if #pieces == 0 and #items == 0 and #actors == 0 then
+        return false, "no pieces/items/actors in JSON"
     end
 
-    -- AvailableInventories: empty array. With requirements zeroed by
-    -- the free-build mod, the spawn path has nothing to consume. We
-    -- pass a literal Lua array ; UE4SS marshals to TArray.
+    local bmc = nil
     local empty_inv = {}
+    if #pieces > 0 then
+        local _pc, resolved_bmc, err = get_local_pc_and_bmc()
+        if not resolved_bmc then
+            return false, "build mode unavailable: " .. tostring(err)
+        end
+        bmc = resolved_bmc
+        if type(bmc.Server_SpawnBuilding) ~= "function" and not bmc.Server_SpawnBuilding then
+            -- UE4SS exposes UFunctions as callable members -- the truthy
+            -- check via direct index is the reliable test.
+            return false, "BuildModeComponent has no Server_SpawnBuilding"
+        end
+    end
 
     -- Ghost-mode delivery: pass bSpawnGhost=true to Server_SpawnBuilding
     -- so the engine spawns each piece as a proper persistent ghost
@@ -1320,7 +1434,7 @@ function M.import(args_str)
     -- previous approach of post-spawn pinning bIsGhosted=true on the
     -- client only had no effect on the persisted state.
     local spawn_ghost = ghost_mode and true or false
-    if ghost_mode then
+    if ghost_mode and #pieces > 0 then
         print("[RSDWTools] buildings.import: ghost-mode armed (Server_SpawnBuilding bSpawnGhost=true)")
     end
 
@@ -1353,17 +1467,24 @@ function M.import(args_str)
     end
 
     local item_counts = replay_items_absolute(items)
+    local actor_counts = replay_actors_absolute(actors)
 
-    print(string.format("[RSDWTools] buildings.import: done  sent=%d failed=%d items_sent=%d items_failed=%d items_skipped=%d",
-        ok_count, fail_count, item_counts.sent, item_counts.failed, item_counts.skipped))
+    print(string.format("[RSDWTools] buildings.import: done  sent=%d failed=%d items_sent=%d items_failed=%d items_skipped=%d actors_sent=%d actors_failed=%d actors_skipped=%d",
+        ok_count, fail_count,
+        item_counts.sent, item_counts.failed, item_counts.skipped,
+        actor_counts.sent, actor_counts.failed, actor_counts.skipped))
 
-    local suffix = ghost_mode and " (spawned as persistent ghosts)" or ""
+    local suffix = (ghost_mode and #pieces > 0) and " (spawned as persistent ghosts)" or ""
     local item_suffix = (#items > 0)
         and string.format(" items_sent=%d items_failed=%d items_skipped=%d",
             item_counts.sent, item_counts.failed, item_counts.skipped)
         or ""
-    return true, string.format("sent=%d failed=%d%s%s (server may still reject ; check world)",
-        ok_count, fail_count, item_suffix, suffix)
+    local actor_suffix = (#actors > 0)
+        and string.format(" actors_sent=%d actors_failed=%d actors_skipped=%d",
+            actor_counts.sent, actor_counts.failed, actor_counts.skipped)
+        or ""
+    return true, string.format("sent=%d failed=%d%s%s%s (server may still reject ; check world)",
+        ok_count, fail_count, item_suffix, actor_suffix, suffix)
 end
 
 -- ---------------------------------------------------------------------------
@@ -2329,11 +2450,14 @@ end
 -- Kept underscore-prefixed to signal "internal helper, not a router verb".
 M._parse_pieces = parse_pieces
 M._parse_items = parse_items
+M._parse_actors = parse_actors
 M._capture_path_for = export_path_for
 M._sanitize_name = sanitize_name
 M._get_local_pc_and_bmc = get_local_pc_and_bmc
 M._make_transform = make_transform
 M._replay_items_absolute = replay_items_absolute
 M._replay_items_relative = replay_items_relative
+M._replay_actors_absolute = replay_actors_absolute
+M._replay_actors_relative = replay_actors_relative
 
 return M
