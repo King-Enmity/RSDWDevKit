@@ -30,32 +30,15 @@ foreach ($mod in @('BPML_GenericFunctions', 'BPModLoaderMod')) {
     if (Test-Path $src) { Copy-Item $src (Join-Path $modsOut $mod) -Recurse -Force }
 }
 
-# Temporary compatibility copy: RSDWServer currently reuses shared Lua modules
-# from the legacy RSDWTools package (notably feature_net). Remove client-only
-# assets immediately after copying.
-$legacySrc = Join-Path $Root 'ue4ss\Mods\RSDWTools'
-$legacyDst = Join-Path $modsOut 'RSDWToolsShared'
-if (Test-Path $legacySrc) {
-    Copy-Item $legacySrc $legacyDst -Recurse -Force
-    foreach ($name in @('RSDWTools.exe', 'web')) {
-        $p = Join-Path $legacyDst $name
-        if (Test-Path $p) { Remove-Item $p -Recurse -Force }
-    }
-}
-
-# Add the dedicated server runtime.
+# Add the dedicated server runtime. This package deliberately does not copy the
+# legacy RSDWTools mod, desktop app, client console, camera, UMG or hotkeys.
 $serverDst = Join-Path $modsOut 'RSDWServer'
 New-Item -ItemType Directory -Path $serverDst -Force | Out-Null
 Copy-Item (Join-Path $Root 'server\RSDWServer\*') $serverDst -Recurse -Force
 
-# Explicitly excluded client-only mods/binaries:
-# ConsoleEnablerMod, CheatManagerEnablerMod, ConsoleCommandsMod,
-# RSDWTools.exe, RSDWTools_Installer.exe, UMG/hotkey/camera UI package pieces.
-
 @(
     'BPML_GenericFunctions : 1',
     'BPModLoaderMod : 1',
-    'RSDWToolsShared : 1',
     'RSDWServer : 1'
 ) | Set-Content (Join-Path $modsOut 'mods.txt') -Encoding ASCII
 
