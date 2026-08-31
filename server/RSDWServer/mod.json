@@ -1,0 +1,5 @@
+{
+  "name": "RSDWServer",
+  "side": "server",
+  "description": "Headless dedicated-server RSDW UE4SS runtime for authoritative server mods and administration."
+}
