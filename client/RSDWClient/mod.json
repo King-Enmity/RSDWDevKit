@@ -1,0 +1,5 @@
+{
+  "name": "RSDWClient",
+  "side": "client",
+  "description": "Client-only RSDW UE4SS runtime: UI, hotkeys, camera and local tooling."
+}
